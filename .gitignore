@@ -3,4 +3,4 @@ out/
 dist/
 coverage/
 *.log
-.DS_Store
+.DS_Storerelease/
