@@ -5,7 +5,7 @@
   "description": "本地摄影相册与社交作品排版工具",
   "main": "./out/main/index.js",
   "author": "Album Studio",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
