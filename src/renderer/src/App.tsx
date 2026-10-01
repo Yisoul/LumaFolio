@@ -39,7 +39,7 @@ export default function App() {
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null)
   const [toast, setToast] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
   const [albumDialogOpen, setAlbumDialogOpen] = useState(false)
-  const [settings, setSettings] = useState<AppSettings>({ thumbnailCacheLimitGb: 10, autoWatch: true, theme: 'dark', uiScale: 1, thumbnailSize: 200, treeWidth: 220, inspectorWidth: 320 })
+  const [settings, setSettings] = useState<AppSettings>({ thumbnailCacheLimitGb: 10, autoWatch: true, theme: 'dark', uiScale: 1, thumbnailSize: 200, treeWidth: 220, inspectorWidth: 320, navWidth: 208 })
   const settingsRef = useRef(settings)
   const saveTimerRef = useRef<number | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -194,8 +194,11 @@ export default function App() {
   }
 
   return (
-    <div className={`app-shell ${navCollapsed ? 'nav-collapsed' : ''}`}>
-      {navCollapsed && <button type="button" className="nav-rail-toggle icon-button" title="显示导航栏" onClick={() => setNavCollapsed(false)}><IconPanelRight size={16} /></button>}
+    <div
+      className={`app-shell ${navCollapsed ? 'nav-collapsed' : ''}`}
+      style={{ gridTemplateColumns: navCollapsed ? '44px minmax(0, 1fr)' : `${settings.navWidth ?? 208}px 4px minmax(0, 1fr)` }}
+    >
+      {navCollapsed && <div className="nav-rail"><button type="button" className="icon-button" title="显示导航栏" onClick={() => setNavCollapsed(false)}><IconPanelRight size={16} /></button></div>}
       <aside className="sidebar">
         <div className="brand"><div><strong>光影册</strong><span>LumaFolio</span></div><button type="button" className="icon-button" title="隐藏导航栏" onClick={() => setNavCollapsed(true)}><IconPanelLeft size={16} /></button></div>
         <nav className="nav-list">
@@ -206,6 +209,12 @@ export default function App() {
         </nav>
         <div className="sidebar-stats"><span>{stats.assets.toLocaleString()} 张照片</span><span>{stats.roots} 个来源目录</span></div>
       </aside>
+      {!navCollapsed && <Splitter
+        width={settings.navWidth ?? 208}
+        min={160}
+        max={360}
+        onResize={(value) => applySettings({ navWidth: value }, 'debounce')}
+      />}
       <main className="main-content">
         {scanProgress && scanProgress.phase !== 'complete' && (
           <div className="scan-banner">

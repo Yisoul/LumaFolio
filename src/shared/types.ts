@@ -212,6 +212,8 @@ export interface AppSettings {
   treeWidth: number
   /** 右侧信息栏宽度，单位 px。 */
   inspectorWidth: number
+  /** 最左侧导航栏宽度，单位 px。 */
+  navWidth: number
 }
 
 export interface ScanSummary {

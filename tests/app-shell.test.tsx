@@ -305,12 +305,25 @@ describe('App shell', () => {
     ])
     const { container } = render(<App />)
 
-    await waitFor(() => expect(container.querySelector('.splitter')).not.toBeNull())
-    fireEvent.pointerDown(container.querySelector('.splitter')!, { clientX: 220 })
+    // 第 0 个分隔条是最左侧导航栏，第 1 个才是文件夹栏。
+    await waitFor(() => expect(container.querySelectorAll('.splitter').length).toBeGreaterThanOrEqual(2))
+    fireEvent.pointerDown(container.querySelectorAll('.splitter')[1], { clientX: 220 })
     fireEvent.pointerMove(window, { clientX: 300 })
     fireEvent.pointerUp(window)
 
     await waitFor(() => expect(api.app.saveSettings).toHaveBeenLastCalledWith(expect.objectContaining({ treeWidth: 300 })))
+  })
+
+  it('resizes the left navigation by dragging its splitter', async () => {
+    const api = stubApi('dark')
+    const { container } = render(<App />)
+
+    await waitFor(() => expect(container.querySelector('.splitter')).not.toBeNull())
+    fireEvent.pointerDown(container.querySelector('.splitter')!, { clientX: 208 })
+    fireEvent.pointerMove(window, { clientX: 280 })
+    fireEvent.pointerUp(window)
+
+    await waitFor(() => expect(api.app.saveSettings).toHaveBeenLastCalledWith(expect.objectContaining({ navWidth: 280 })))
   })
 
   it('resizes thumbnails with ctrl + wheel over the grid', async () => {

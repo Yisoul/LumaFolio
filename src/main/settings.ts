@@ -9,7 +9,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   uiScale: 1,
   thumbnailSize: 200,
   treeWidth: 220,
-  inspectorWidth: 320
+  inspectorWidth: 320,
+  navWidth: 208
 }
 const THEMES = new Set<AppSettings['theme']>(['dark', 'light'])
 const MIN_UI_SCALE = 0.8
@@ -30,7 +31,8 @@ export class SettingsService {
         uiScale: clamp(parsed.uiScale ?? DEFAULT_SETTINGS.uiScale, MIN_UI_SCALE, MAX_UI_SCALE),
         thumbnailSize: clamp(parsed.thumbnailSize ?? DEFAULT_SETTINGS.thumbnailSize, MIN_THUMBNAIL_SIZE, MAX_THUMBNAIL_SIZE),
         treeWidth: clamp(parsed.treeWidth ?? DEFAULT_SETTINGS.treeWidth, 160, 420),
-        inspectorWidth: clamp(parsed.inspectorWidth ?? DEFAULT_SETTINGS.inspectorWidth, 240, 520)
+        inspectorWidth: clamp(parsed.inspectorWidth ?? DEFAULT_SETTINGS.inspectorWidth, 240, 520),
+        navWidth: clamp(parsed.navWidth ?? DEFAULT_SETTINGS.navWidth, 160, 360)
       }
     } catch {
       return { ...DEFAULT_SETTINGS }
@@ -45,7 +47,8 @@ export class SettingsService {
       uiScale: clamp(settings.uiScale, MIN_UI_SCALE, MAX_UI_SCALE),
       thumbnailSize: clamp(settings.thumbnailSize, MIN_THUMBNAIL_SIZE, MAX_THUMBNAIL_SIZE),
       treeWidth: clamp(settings.treeWidth, 160, 420),
-      inspectorWidth: clamp(settings.inspectorWidth, 240, 520)
+      inspectorWidth: clamp(settings.inspectorWidth, 240, 520),
+      navWidth: clamp(settings.navWidth, 160, 360)
     }
     await mkdir(dirname(this.filePath), { recursive: true })
     await writeFile(this.filePath, JSON.stringify(normalized, null, 2), 'utf8')

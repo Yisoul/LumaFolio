@@ -75,10 +75,10 @@ button { cursor: pointer; }
 img { display: block; max-width: 100%; }
 
 .app-shell { display: grid; grid-template-columns: 208px 1fr; height: 100%; background: var(--page-bg); }
-/* 收起后侧栏 display:none、展开按钮是 fixed，网格只剩主内容一列。 */
-.app-shell.nav-collapsed { grid-template-columns: minmax(0, 1fr); }
+/* 收起后留一条 44px 窄轨放展开按钮，避免悬浮按钮和图库工具栏的图标叠在一起。 */
+.app-shell.nav-collapsed { grid-template-columns: 44px minmax(0, 1fr); }
 .app-shell.nav-collapsed .sidebar { display: none; }
-.nav-rail-toggle { position: fixed; top: 10px; left: 10px; z-index: 40; border-color: var(--line); background: var(--paper); box-shadow: var(--shadow); }
+.nav-rail { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0; border-right: 1px solid var(--line); background: var(--sidebar-bg); }
 .sidebar { display: flex; flex-direction: column; padding: 18px 12px 14px; border-right: 1px solid var(--line); color: var(--sidebar-text); background: var(--sidebar-bg); }
 .brand { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 4px 20px 8px; }
 .brand strong, .brand span { display: block; }
