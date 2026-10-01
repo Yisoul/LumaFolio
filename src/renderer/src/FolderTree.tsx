@@ -7,7 +7,8 @@ interface FolderTreeProps {
   folders: FolderSummary[]
   roots: SourceRoot[]
   selectedPaths: string[]
-  onToggle: (path: string) => void
+  /** additive 为 true（Ctrl/⌘ 点击）时把目录加进已选，否则只选它。 */
+  onToggle: (path: string, additive: boolean) => void
   onClear: () => void
   totalCount: number
   /** 鼠标悬浮照片时联动高亮的目录。 */
@@ -75,7 +76,7 @@ export default function FolderTree(props: FolderTreeProps) {
           >
             {hasChildren ? (isExpanded ? <IconChevronDown size={13} /> : <IconChevronRight size={13} />) : null}
           </button>
-          <button type="button" className="tree-label" onClick={() => props.onToggle(node.path)}>
+          <button type="button" className="tree-label" onClick={(event) => props.onToggle(node.path, event.ctrlKey || event.metaKey)}>
             <IconFolder size={14} />
             <span>{node.name}</span>
           </button>

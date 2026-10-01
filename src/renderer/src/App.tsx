@@ -379,10 +379,15 @@ function LibraryPage(props: {
     const index = photos.findIndex((photo) => photo.id === asset.id)
     if (index >= 0) setLightboxIndex(index)
   }
-  const toggleFolder = (path: string): void => {
-    // 单选：点一个目录就只筛它，父级和「全部文件夹」的选中态一起清掉。
-    const alreadySelected = (filters.folderPaths ?? []).includes(path)
-    updateFilters({ folderPaths: alreadySelected ? undefined : [path] })
+  /** 普通点击只选一个目录（父级和「全部文件夹」自动取消），Ctrl/⌘ 点击可以多选。 */
+  const toggleFolder = (path: string, additive: boolean): void => {
+    const current = filters.folderPaths ?? []
+    if (!additive) {
+      updateFilters({ folderPaths: current.length === 1 && current[0] === path ? undefined : [path] })
+      return
+    }
+    const next = current.includes(path) ? current.filter((item) => item !== path) : [...current, path]
+    updateFilters({ folderPaths: next.length ? next : undefined })
   }
   const clearFilters = (): void => {
     setFilters({ sort: filters.sort ?? 'captured_desc' })
@@ -413,7 +418,7 @@ function LibraryPage(props: {
               folders={folders}
               roots={props.roots}
               selectedPaths={viewMode === 'all' ? [] : filters.folderPaths ?? []}
-              onToggle={(path) => { setViewMode('folders'); toggleFolder(path) }}
+              onToggle={(path, additive) => { setViewMode('folders'); toggleFolder(path, additive) }}
               onClear={() => updateFilters({ folderPaths: undefined })}
               totalCount={total}
               linkedPath={hoveredFolder}
@@ -823,14 +828,23 @@ function AssetPicker(props: { title: string; thumbnailSize: number; onClose: () 
   const updateFilters = (patch: Partial<Omit<SearchFilters, 'limit' | 'offset'>>) => { setFilters((current) => ({ ...current, ...patch })); setPage(0) }
 
   return (
-    <Modal title={props.title} onClose={props.onClose} wide>
+    <Modal title={props.title} onClose={props.onClose} wide className="picker-modal">
       <div className="picker-layout">
         <aside className="picker-side">
           <FolderTree
             folders={folders}
             roots={[]}
             selectedPaths={viewMode === 'all' ? [] : filters.folderPaths ?? []}
-            onToggle={(path) => { setViewMode('folders'); updateFilters({ folderPaths: (filters.folderPaths ?? []).includes(path) ? undefined : [path] }) }}
+            onToggle={(path, additive) => {
+              setViewMode('folders')
+              const current = filters.folderPaths ?? []
+              if (!additive) {
+                updateFilters({ folderPaths: current.length === 1 && current[0] === path ? undefined : [path] })
+                return
+              }
+              const next = current.includes(path) ? current.filter((item) => item !== path) : [...current, path]
+              updateFilters({ folderPaths: next.length ? next : undefined })
+            }}
             onClear={() => updateFilters({ folderPaths: undefined })}
             totalCount={total}
           />
@@ -953,8 +967,8 @@ function RemoveRootDialog(props: { root: SourceRoot; impact: SourceRootImpact | 
     </div>
   )
 }
-export function Modal(props: { title: string; children: React.ReactNode; onClose: () => void; wide?: boolean }) {
-  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose() }}><div className={`modal ${props.wide ? 'wide' : ''}`}><header><h2>{props.title}</h2><button aria-label="关闭" onClick={props.onClose}>×</button></header><div className="modal-body">{props.children}</div></div></div>
+export function Modal(props: { title: string; children: React.ReactNode; onClose: () => void; wide?: boolean; className?: string }) {
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose() }}><div className={`modal ${props.wide ? 'wide' : ''} ${props.className ?? ''}`}><header><h2>{props.title}</h2><button aria-label="关闭" onClick={props.onClose}>×</button></header><div className="modal-body">{props.children}</div></div></div>
 }
 
 function EmptyState(props: { title: string; text: string; action?: string; onAction?: () => void }) {

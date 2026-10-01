@@ -37,7 +37,7 @@ function libraryAsset(index: number): MediaAssetSummary {
   }
 }
 
-function stubApi(theme: 'dark' | 'light', assets: MediaAssetSummary[] = [], roots: unknown[] = []) {
+function stubApi(theme: 'dark' | 'light', assets: MediaAssetSummary[] = [], roots: unknown[] = [], folders: unknown[] = []) {
   const api = {
     app: {
       getStats: vi.fn(async () => ({ assets: 12, duplicateGroups: 1, missing: 0, roots: 1 })),
@@ -56,7 +56,7 @@ function stubApi(theme: 'dark' | 'light', assets: MediaAssetSummary[] = [], root
     library: {
       listRoots: vi.fn(async () => roots),
       search: vi.fn(async () => ({ items: assets, total: assets.length })),
-      listFolders: vi.fn(async () => []),
+      listFolders: vi.fn(async () => folders),
       listDuplicates: vi.fn(async () => []),
       getRootImpact: vi.fn(async () => ({ assetCount: 0, locationCount: 0 })),
       addRoots: vi.fn(async () => []),
@@ -278,6 +278,25 @@ describe('App shell', () => {
 
     fireEvent.mouseLeave(container.querySelector('.tile')!)
     await waitFor(() => expect(container.querySelector('.tree-row.linked')).toBeNull())
+  })
+
+  it('adds more folders to the filter with ctrl+click', async () => {
+    stubApi('dark', [libraryAsset(1)], [{ id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }], [
+      { path: 'C:\\photos\\a', name: 'a', assetCount: 2 },
+      { path: 'C:\\photos\\b', name: 'b', assetCount: 3 }
+    ])
+    const { container } = render(<App />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'a' })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'a' }))
+    await waitFor(() => expect(container.querySelectorAll('.tree-row.selected')).toHaveLength(1))
+
+    fireEvent.click(screen.getByRole('button', { name: 'b' }), { ctrlKey: true })
+    await waitFor(() => expect(container.querySelectorAll('.tree-row.selected')).toHaveLength(2))
+
+    // 普通点击会替换掉多选，只剩当前这一个。
+    fireEvent.click(screen.getByRole('button', { name: 'a' }))
+    await waitFor(() => expect(container.querySelectorAll('.tree-row.selected')).toHaveLength(1))
   })
 
   it('keeps captions out of the row height so tiles cannot overlap', async () => {
