@@ -82,6 +82,7 @@ export function normalizeKey(key: string): string {
   if (lower === 'esc') return 'escape'
   if (lower === '+') return 'plus'
   if (lower === '-') return 'minus'
+  if (lower === '=') return 'equal'
   return lower
 }
 

@@ -18,6 +18,7 @@ describe('shortcut combos', () => {
     expect(normalizeKey('Esc')).toBe('escape')
     expect(normalizeKey('+')).toBe('plus')
     expect(normalizeKey('-')).toBe('minus')
+    expect(normalizeKey('=')).toBe('equal')
     expect(normalizeKey('F')).toBe('f')
   })
 
@@ -35,6 +36,7 @@ describe('shortcut combos', () => {
     expect(comboMatches('ctrl+1', keyEvent('1'))).toBe(false)
     expect(comboMatches('ctrl+1', keyEvent('1', { ctrlKey: true, shiftKey: true }))).toBe(false)
     expect(comboMatches('plus', keyEvent('+', { shiftKey: true }))).toBe(true)
+    expect(comboMatches('equal', keyEvent('='))).toBe(true)
     expect(comboMatches('equal', keyEvent('=', { shiftKey: true }))).toBe(false)
   })
 
