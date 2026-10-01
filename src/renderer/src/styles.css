@@ -376,3 +376,43 @@ input:focus, select:focus, textarea:focus { border-color: #ce8c71; box-shadow: 0
 .context-menu button.danger { color: var(--danger); }
 .context-menu button:disabled { color: #aaa298; cursor: default; }
 .context-menu-separator { height: 1px; margin: 5px 4px; background: #e8e2d8; }
+
+/* ---------- 全屏瀑布流选片 ---------- */
+.waterfall-shell { position: fixed; inset: 0; z-index: 60; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; color: #ececed; background: #121214; }
+.waterfall-header { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 10px 16px; border-bottom: 1px solid #2a2a2f; background: #17171a; }
+.waterfall-title { display: grid; gap: 2px; min-width: 0; }
+.waterfall-title strong { font-size: 14px; font-weight: 600; }
+.waterfall-title span { color: #9a9aa2; font-size: 11px; }
+.waterfall-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+.waterfall-tools select { padding: 6px 9px; border: 1px solid #33333a; border-radius: 6px; color: #ececed; background: #202024; font-size: 12px; }
+.waterfall-tools .button.secondary { border-color: #33333a; color: #ececed; background: #202024; }
+.waterfall-tools .segmented { padding: 2px; background: #202024; }
+.waterfall-tools .segmented button { padding: 5px 10px; border-radius: 5px; color: #9a9aa2; font-size: 12px; }
+.waterfall-tools .segmented button.active { color: #fff; background: #4c8dff; }
+.waterfall-body { position: relative; min-height: 0; overflow: auto; padding: 14px 16px 28px; }
+.waterfall-grid { column-gap: 12px; }
+.waterfall-item { position: relative; display: block; width: 100%; margin: 0 0 12px; padding: 0; break-inside: avoid; border: 1px solid transparent; border-radius: 10px; background: #1b1b1f; overflow: hidden; transition: border-color .15s ease, transform .15s ease; }
+.waterfall-item:hover { border-color: #4a4a52; }
+.waterfall-item.selected { border-color: #4c8dff; box-shadow: 0 0 0 1px rgba(76,141,255,.55); }
+.waterfall-item.marked { border-color: #4c8dff; }
+.waterfall-item img { display: block; width: 100%; height: auto; object-fit: cover; }
+.waterfall-placeholder { display: grid; width: 100%; place-items: center; align-content: center; gap: 6px; color: #8b8b93; background: #202024; font-size: 22px; }
+.waterfall-placeholder small { font-size: 11px; }
+.waterfall-stars { position: absolute; left: 8px; bottom: 8px; padding: 2px 6px; border-radius: 999px; color: #f5c451; background: rgba(12,12,14,.62); font-size: 11px; letter-spacing: -1px; }
+.waterfall-favorite { position: absolute; top: 8px; left: 8px; color: #f5c451; text-shadow: 0 1px 5px rgba(0,0,0,.6); }
+.waterfall-mark-badge { position: absolute; top: 8px; right: 8px; display: grid; width: 22px; height: 22px; place-items: center; border-radius: 50%; color: #fff; background: #4c8dff; font-size: 12px; }
+.waterfall-hint { padding: 70px 20px; color: #9a9aa2; text-align: center; }
+.waterfall-sentinel { display: grid; place-items: center; padding: 26px 0 8px; }
+.waterfall-statusbar { display: flex; align-items: center; gap: 16px; overflow: hidden; padding: 9px 16px; border-top: 1px solid #2a2a2f; color: #c9c9cf; background: #17171a; font-size: 12px; white-space: nowrap; }
+.waterfall-statusbar .waterfall-file { max-width: 34%; overflow: hidden; color: #fff; font-weight: 600; text-overflow: ellipsis; }
+.waterfall-marked-tag { color: #7fb0ff; font-size: 12px; font-weight: 600; }
+
+.lightbox { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; background: rgba(8,8,9,.95); }
+.lightbox-image { max-width: 92vw; max-height: 80vh; object-fit: contain; }
+.lightbox-close { position: absolute; top: 16px; right: 20px; width: 34px; height: 34px; border: 1px solid rgba(255,255,255,.22); border-radius: 8px; color: #fff; background: rgba(20,20,22,.6); font-size: 18px; }
+.lightbox-nav { position: absolute; top: 50%; display: grid; width: 46px; height: 64px; place-items: center; transform: translateY(-50%); border: 1px solid rgba(255,255,255,.22); border-radius: 10px; color: #fff; background: rgba(20,20,22,.55); font-size: 34px; line-height: 1; }
+.lightbox-nav:hover { background: rgba(20,20,22,.85); }
+.lightbox-nav.previous { left: 18px; }
+.lightbox-nav.next { right: 18px; }
+.lightbox-info { position: absolute; right: 0; bottom: 0; left: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 14px 22px; color: #d6d6dc; background: linear-gradient(to top, rgba(10,10,12,.94), rgba(10,10,12,0)); font-size: 12px; }
+.lightbox-info .button.secondary { border-color: #33333a; color: #ececed; background: #202024; }
