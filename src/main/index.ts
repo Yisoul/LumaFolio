@@ -1,4 +1,5 @@
 import { app, BrowserWindow, Menu, net, protocol } from 'electron'
+import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { LEGACY_APP_FOLDER, migrateLegacyAppData } from './app-data'
@@ -22,6 +23,18 @@ let scanner: LibraryScanner | null = null
 let removeIpcHandlers: (() => void) | null = null
 /** 当前界面缩放比例，新建窗口（例如 macOS 激活）时沿用它。 */
 let currentUiScale = 1
+let windowBackground = '#141416'
+
+/** 启动日志；排查"进程起来了但没有窗口"这类问题时全靠它。 */
+function logStartup(message: string): void {
+  const line = `${new Date().toISOString()} [${process.pid}] ${message}\n`
+  console.log(message)
+  try {
+    appendFileSync(join(app.getPath('userData'), 'startup.log'), line, 'utf8')
+  } catch {
+    // 日志写不进去不影响启动。
+  }
+}
 
 function applyZoom(window: BrowserWindow | null, scale: number): void {
   if (!window || window.isDestroyed()) return
@@ -47,7 +60,7 @@ function createWindow(): BrowserWindow {
     minWidth: 1120,
     minHeight: 720,
     show: false,
-    backgroundColor: '#f6f4ef',
+    backgroundColor: windowBackground,
     title: '光影册 LumaFolio',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -60,14 +73,42 @@ function createWindow(): BrowserWindow {
   // 导航前先设一次，并在加载完成后补一次：缩放比例是按来源记录的，
   // 页面加载后需要重新应用才能保证首帧就是目标比例。
   applyZoom(window, currentUiScale)
-  window.webContents.on('did-finish-load', () => applyZoom(window, currentUiScale))
+  window.webContents.on('did-finish-load', () => {
+    applyZoom(window, currentUiScale)
+    logStartup('did-finish-load')
+    // 极少数环境里 ready-to-show 不触发，这里补一次，保证窗口一定会露出来。
+    if (!window.isVisible()) window.show()
+  })
+  window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    logStartup(`did-fail-load ${errorCode} ${errorDescription} ${validatedURL}`)
+  })
+  window.webContents.on('render-process-gone', (_event, details) => {
+    logStartup(`render-process-gone ${details.reason} exitCode=${details.exitCode}`)
+  })
+  app.on('child-process-gone', (_event, details) => {
+    logStartup(`child-process-gone ${details.type} ${details.reason} exitCode=${details.exitCode}`)
+  })
 
   const headless = process.env.LUMA_FOLIO_HEADLESS === '1' || process.env.ALBUM_STUDIO_HEADLESS === '1'
-  window.once('ready-to-show', () => { if (!headless) window.show() })
+  window.once('ready-to-show', () => {
+    logStartup('ready-to-show')
+    if (!headless) window.show()
+  })
+  if (!headless) {
+    // 兜底：ready-to-show 在两秒内没来也把窗口显示出来，避免"进程活着但看不到界面"。
+    setTimeout(() => {
+      if (window.isDestroyed() || window.isVisible()) return
+      logStartup('fallback show after timeout')
+      window.show()
+    }, 2000)
+  }
+  window.on('show', () => logStartup('window shown'))
+  window.on('unresponsive', () => logStartup('window unresponsive'))
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = null
   })
 
+  logStartup('window created')
   if (process.env.ELECTRON_RENDERER_URL) {
     void window.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
@@ -77,6 +118,7 @@ function createWindow(): BrowserWindow {
 }
 
 async function initialize(): Promise<void> {
+  logStartup('initialize start')
   migrateLegacyAppDataSafe()
   const userData = app.getPath('userData')
   const databasePath = join(userData, 'library.sqlite')
@@ -87,6 +129,7 @@ async function initialize(): Promise<void> {
   database = new AppDatabase(databasePath)
   database.migrate()
   seedTemplates(database)
+  logStartup(`database ready at ${databasePath}`)
 
   const backups = new BackupService(database, databasePath, backupDirectory, 7)
   const settings = new SettingsService(join(userData, 'settings.json'))
@@ -123,6 +166,8 @@ async function initialize(): Promise<void> {
   })
 
   currentUiScale = (await settings.get()).uiScale
+  windowBackground = (await settings.get()).theme === 'light' ? '#f5f5f6' : '#141416'
+  logStartup(`uiScale=${currentUiScale}`)
   mainWindow = createWindow()
   removeIpcHandlers = registerIpcHandlers({
     db: database,
@@ -155,15 +200,35 @@ async function initialize(): Promise<void> {
   })
 }
 
+process.on('uncaughtException', (error) => {
+  logStartup(`uncaughtException ${error instanceof Error ? error.stack ?? error.message : String(error)}`)
+})
+
+// 只允许一个实例：重复双击时把已有窗口拉到前面，而不是再起一堆看不到界面的进程。
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    logStartup('second-instance')
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+  })
+}
+
 app.whenReady().then(async () => {
+  logStartup('app ready')
   Menu.setApplicationMenu(null)
   app.setAppUserModelId('com.lumafolio.desktop')
   await initialize()
+  logStartup('initialize done')
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()
   })
 }).catch((error) => {
-  console.error(error)
+  logStartup(`initialize failed ${error instanceof Error ? error.stack ?? error.message : String(error)}`)
   app.quit()
 })
 
