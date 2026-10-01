@@ -506,6 +506,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .browse-main { display: grid; grid-template-rows: auto auto minmax(0, 1fr); min-width: 0; min-height: 0; }
 .browse-toolbar { display: grid; grid-template-columns: minmax(110px, auto) 1fr auto; align-items: center; gap: 14px; padding: 7px 14px; border-bottom: 1px solid var(--line); background: var(--paper); }
 .browse-title { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.browse-title .icon-button { margin-right: 2px; }
 .browse-title strong { font-size: 13px; font-weight: 600; white-space: nowrap; }
 .browse-title span { color: var(--muted); font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .browse-tools { display: flex; align-items: center; gap: 4px; }

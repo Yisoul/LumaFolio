@@ -425,10 +425,13 @@ function LibraryPage(props: {
 
       <div className="browse-main">
         <header className="browse-toolbar">
-          <div className="browse-title"><strong>图库</strong><span>{total.toLocaleString()} 张{selected.size > 0 ? ` · 已选 ${selected.size}` : ''}</span></div>
+          <div className="browse-title">
+            <button type="button" className={`icon-button ${treeOpen ? 'active' : ''}`} title={treeOpen ? '隐藏文件夹栏' : '显示文件夹栏'} onClick={() => setTreeOpen((open) => !open)}><IconPanelLeft size={16} /></button>
+            <strong>图库</strong>
+            <span>{total.toLocaleString()} 张{selected.size > 0 ? ` · 已选 ${selected.size}` : ''}</span>
+          </div>
           <ThumbSizeSlider value={props.settings.thumbnailSize} onChange={(value) => props.onSettingsChange({ thumbnailSize: value }, 'debounce')} />
           <div className="browse-tools">
-            <button type="button" className={`icon-button ${treeOpen ? 'active' : ''}`} title={treeOpen ? '隐藏文件夹栏' : '显示文件夹栏'} onClick={() => setTreeOpen((open) => !open)}><IconPanelLeft size={16} /></button>
             <button type="button" className="icon-button" title="全屏浏览（F）" onClick={() => setWaterfallOpen(true)}><IconExpand size={16} /></button>
             <button type="button" className="icon-button" title="重新扫描" onClick={() => void props.onScanAll()}><IconRefresh size={16} /></button>
             <button type="button" className="icon-button" title="添加文件夹" onClick={() => void props.onAddRoots()}><IconPlus size={16} /></button>
