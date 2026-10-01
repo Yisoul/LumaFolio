@@ -153,6 +153,7 @@ export function registerIpcHandlers(context: IpcContext): () => void {
   handle('albums:set-cover', (_event, albumId: string, assetId: string) => context.db.setAlbumCover(albumId, assetId))
 
   handle('works:list', (_event, albumId: string) => context.db.listWorks(albumId))
+  handle('works:list-covers', (_event, albumId: string) => context.db.listWorkCovers(albumId))
   handle('works:create', (_event, request: {
     albumId: string
     name: string

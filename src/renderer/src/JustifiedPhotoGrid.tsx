@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MediaAssetSummary } from '../../shared/types'
 import { computeJustifiedRows } from './grid'
-import { fileName, formatDimensions, ratingStars, thumbnailUrl } from './helpers'
+import { fileName, ratingStars, thumbnailUrl } from './helpers'
 import { IconCheck, IconStar } from './icons'
 
 export interface JustifiedPhotoGridProps {
@@ -13,6 +13,8 @@ export interface JustifiedPhotoGridProps {
   onActivate: (asset: MediaAssetSummary, additive: boolean) => void
   onOpen: (asset: MediaAssetSummary) => void
   onContextMenu?: (event: React.MouseEvent, asset: MediaAssetSummary) => void
+  /** 鼠标移到某张照片上时回调，用来联动高亮左侧文件夹。 */
+  onHover?: (asset: MediaAssetSummary | null) => void
 }
 
 export default function JustifiedPhotoGrid(props: JustifiedPhotoGridProps) {
@@ -39,7 +41,7 @@ export default function JustifiedPhotoGrid(props: JustifiedPhotoGridProps) {
   return (
     <div className="justified-grid" ref={containerRef}>
       {layout.rows.map((row, rowIndex) => (
-        <div className="justified-row" key={rowIndex} style={{ height: `${row.height}px` }}>
+        <div className="justified-row" key={rowIndex}>
           {row.items.map((item) => {
             const asset = assetById.get(item.id)
             if (!asset) return null
@@ -54,6 +56,7 @@ export default function JustifiedPhotoGrid(props: JustifiedPhotoGridProps) {
                 onActivate={props.onActivate}
                 onOpen={props.onOpen}
                 onContextMenu={props.onContextMenu}
+                onHover={props.onHover}
               />
             )
           })}
@@ -72,17 +75,23 @@ function PhotoTile(props: {
   onActivate: (asset: MediaAssetSummary, additive: boolean) => void
   onOpen: (asset: MediaAssetSummary) => void
   onContextMenu?: (event: React.MouseEvent, asset: MediaAssetSummary) => void
+  onHover?: (asset: MediaAssetSummary | null) => void
 }) {
-  const [loaded, setLoaded] = useState(false)
   const [failed, setFailed] = useState(false)
-  useEffect(() => { setLoaded(false); setFailed(false) }, [props.asset.id])
+  useEffect(() => { setFailed(false) }, [props.asset.id])
 
   const unavailable = props.asset.missing || failed
   return (
-    <figure className={`tile ${props.selected ? 'selected' : ''} ${props.active ? 'active' : ''}`} style={{ width: `${props.width}px` }}>
+    <figure
+      className={`tile ${props.selected ? 'selected' : ''} ${props.active ? 'active' : ''}`}
+      style={{ width: `${props.width}px` }}
+      onMouseEnter={() => props.onHover?.(props.asset)}
+      onMouseLeave={() => props.onHover?.(null)}
+    >
       <button
         type="button"
         className="tile-image"
+        style={{ height: `${props.height}px` }}
         onClick={(event) => props.onActivate(props.asset, event.ctrlKey || event.metaKey)}
         onDoubleClick={() => props.onOpen(props.asset)}
         onContextMenu={(event) => { if (props.onContextMenu) { event.preventDefault(); props.onContextMenu(event, props.asset) } }}
@@ -95,8 +104,6 @@ function PhotoTile(props: {
             alt={fileName(props.asset.primaryPath)}
             loading="lazy"
             decoding="async"
-            className={loaded ? 'loaded' : ''}
-            onLoad={() => setLoaded(true)}
             onError={() => setFailed(true)}
           />}
         <span className="tile-check" aria-hidden="true">{props.selected ? <IconCheck size={12} /> : null}</span>
@@ -106,7 +113,6 @@ function PhotoTile(props: {
       <figcaption className="tile-caption">
         <span className="tile-name">{fileName(props.asset.primaryPath)}</span>
         {props.asset.rating > 0 && <span className="tile-stars" title={`相机内评星 ${props.asset.rating} 星`}>{ratingStars(props.asset.rating)}</span>}
-        <span className="tile-dims">{formatDimensions(props.asset)}</span>
       </figcaption>
     </figure>
   )

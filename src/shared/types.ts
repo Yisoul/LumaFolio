@@ -208,6 +208,10 @@ export interface AppSettings {
   uiScale: number
   /** 对齐行网格的目标行高，单位 px。 */
   thumbnailSize: number
+  /** 左侧文件夹栏宽度，单位 px。 */
+  treeWidth: number
+  /** 右侧信息栏宽度，单位 px。 */
+  inspectorWidth: number
 }
 
 export interface ScanSummary {

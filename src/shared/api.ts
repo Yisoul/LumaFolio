@@ -94,6 +94,7 @@ export interface AlbumStudioApi {
   }
   works: {
     list(albumId: string): Promise<Work[]>
+    listCovers(albumId: string): Promise<Array<{ workId: string; assetId: string | null }>>
     create(request: CreateWorkRequest): Promise<WorkDocument>
     get(workId: string): Promise<WorkDocument>
     update(workId: string, changes: Partial<Pick<Work, 'name' | 'outputMode' | 'canvasWidth' | 'canvasHeight' | 'background'>>): Promise<Work>

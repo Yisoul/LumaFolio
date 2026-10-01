@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FolderSummary, SourceRoot } from '../../shared/types'
 import { buildFolderTree, type FolderTreeNode } from './folder-tree'
 import { IconChevronDown, IconChevronRight, IconFolder } from './icons'
@@ -10,11 +10,27 @@ interface FolderTreeProps {
   onToggle: (path: string) => void
   onClear: () => void
   totalCount: number
+  /** 鼠标悬浮照片时联动高亮的目录。 */
+  linkedPath?: string | null
 }
 
 export default function FolderTree(props: FolderTreeProps) {
   const tree = useMemo(() => buildFolderTree(props.folders, props.roots), [props.folders, props.roots])
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  // 悬浮照片时把对应目录滚动到可见区域（只高亮，不改变筛选）。
+  useEffect(() => {
+    const linked = props.linkedPath
+    if (!linked || !rootRef.current) return
+    const rows = rootRef.current.querySelectorAll('.tree-row[data-path]')
+    for (const row of rows) {
+      if (row.getAttribute('data-path') === linked.replace(/\//g, '\\')) {
+        row.scrollIntoView?.({ block: 'nearest' })
+        break
+      }
+    }
+  }, [props.linkedPath])
 
   // 默认展开第一层，并在选中项变化时自动展开它的祖先。
   useEffect(() => {
@@ -47,9 +63,10 @@ export default function FolderTree(props: FolderTreeProps) {
     const isExpanded = expanded.has(node.path)
     const hasChildren = node.children.length > 0
     const selected = props.selectedPaths.includes(node.path)
+    const linked = Boolean(props.linkedPath) && props.linkedPath!.replace(/\//g, '\\') === node.path
     return (
       <div key={node.path}>
-        <div className={`tree-row ${selected ? 'selected' : ''}`} style={{ paddingLeft: `${6 + depth * 12}px` }} title={node.path}>
+        <div className={`tree-row ${selected ? 'selected' : ''} ${linked ? 'linked' : ''}`} data-path={node.path} style={{ paddingLeft: `${6 + depth * 12}px` }} title={node.path}>
           <button
             type="button"
             className={`tree-caret ${hasChildren ? '' : 'empty'}`}
@@ -70,7 +87,7 @@ export default function FolderTree(props: FolderTreeProps) {
   }
 
   return (
-    <div className="folder-tree">
+    <div className="folder-tree" ref={rootRef}>
       <div className={`tree-row all ${props.selectedPaths.length === 0 ? 'selected' : ''}`} onClick={props.onClear}>
         <button type="button" className="tree-caret empty" tabIndex={-1} />
         <button type="button" className="tree-label"><IconFolder size={14} /><span>全部文件夹</span></button>

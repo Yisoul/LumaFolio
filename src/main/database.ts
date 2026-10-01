@@ -620,6 +620,19 @@ export class AppDatabase {
     }))
   }
 
+  /** 每套作品用第一页的第一张图片当封面。 */
+  listWorkCovers(albumId: string): Array<{ workId: string; assetId: string | null }> {
+    const rows = this.db.prepare(`
+      SELECT w.id AS work_id,
+        (SELECT l.asset_id FROM pages p
+          JOIN layers l ON l.page_id = p.id
+         WHERE p.work_id = w.id AND l.type = 'image' AND l.asset_id IS NOT NULL
+         ORDER BY p.position, l.z_index LIMIT 1) AS asset_id
+      FROM works w WHERE w.album_id = ?
+    `).all(albumId) as Row[]
+    return rows.map((row) => ({ workId: asString(row.work_id), assetId: asNullableString(row.asset_id) }))
+  }
+
   createPage(workId: string, position: number, background: string): Page {
     const id = randomUUID()
     const now = Date.now()

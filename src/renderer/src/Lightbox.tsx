@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import type { MediaAssetSummary } from '../../shared/types'
 import { formatCamera, formatDate, previewUrl, ratingStars } from './helpers'
 import { useShortcut } from './shortcuts'
@@ -16,6 +17,17 @@ export interface LightboxProps {
 export default function Lightbox(props: LightboxProps) {
   const asset = props.assets[props.index] ?? null
   const marked = props.marked ?? new Set<string>()
+
+  // 预加载相邻两张，翻页时不用等解码。
+  useEffect(() => {
+    for (const offset of [-1, 1]) {
+      const neighbor = props.assets[props.index + offset]
+      if (!neighbor || neighbor.missing) continue
+      const image = new window.Image()
+      image.decoding = 'async'
+      image.src = previewUrl(neighbor.id, 2560)
+    }
+  }, [props.index, props.assets])
 
   const step = (delta: number) => {
     if (props.assets.length === 0) return

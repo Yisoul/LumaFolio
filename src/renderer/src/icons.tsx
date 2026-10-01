@@ -41,6 +41,7 @@ export const IconClose = (props: IconProps) => <Icon {...props}><path d="M6 6l12
 export const IconRefresh = (props: IconProps) => <Icon {...props}><path d="M20 11a8 8 0 1 0-1.6 5.6" /><path d="M20 5v6h-6" /></Icon>
 export const IconExpand = (props: IconProps) => <Icon {...props}><path d="M4 9V5h4M20 15v4h-4M15 4h5v5M9 20H4v-5" /></Icon>
 export const IconPanelRight = (props: IconProps) => <Icon {...props}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /></Icon>
+export const IconPanelLeft = (props: IconProps) => <Icon {...props}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></Icon>
 export const IconArrowUp = (props: IconProps) => <Icon {...props}><path d="M12 19V5M6 11l6-6 6 6" /></Icon>
 export const IconArrowDown = (props: IconProps) => <Icon {...props}><path d="M12 5v14M6 13l6 6 6-6" /></Icon>
 export const IconTrash = (props: IconProps) => <Icon {...props}><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" /></Icon>

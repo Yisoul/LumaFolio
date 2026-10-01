@@ -249,4 +249,46 @@ describe('App shell', () => {
     fireEvent.click(screen.getByRole('button', { name: /清除筛选/ }))
     await waitFor(() => expect(container.querySelector('.chip.active')).toBeNull())
   })
+
+  it('selects a single folder at a time and clears back to all folders', async () => {
+    stubApi('dark', [libraryAsset(1)], [
+      { id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }
+    ])
+    const { container } = render(<App />)
+
+    await waitFor(() => expect(container.querySelectorAll('.tree-row').length).toBeGreaterThan(0))
+    expect(container.querySelector('.tree-row.all')?.classList.contains('selected')).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: 'photos' }))
+    await waitFor(() => expect(container.querySelector('.tree-row.selected .tree-label')?.textContent).toContain('photos'))
+    // 选了子目录之后「全部文件夹」不再处于选中态。
+    expect(container.querySelector('.tree-row.all')?.classList.contains('selected')).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: /全部文件夹/ }))
+    await waitFor(() => expect(container.querySelector('.tree-row.all')?.classList.contains('selected')).toBe(true))
+  })
+
+  it('links the hovered photo to its folder in the tree', async () => {
+    stubApi('dark', [libraryAsset(1)], [{ id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }])
+    const { container } = render(<App />)
+
+    await waitFor(() => expect(container.querySelectorAll('.tile')).toHaveLength(1))
+    fireEvent.mouseEnter(container.querySelector('.tile')!)
+    await waitFor(() => expect(container.querySelector('.tree-row.linked')).not.toBeNull())
+
+    fireEvent.mouseLeave(container.querySelector('.tile')!)
+    await waitFor(() => expect(container.querySelector('.tree-row.linked')).toBeNull())
+  })
+
+  it('keeps captions out of the row height so tiles cannot overlap', async () => {
+    stubApi('dark', [libraryAsset(1), libraryAsset(2)], [{ id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }])
+    const { container } = render(<App />)
+
+    await waitFor(() => expect(container.querySelectorAll('.tile')).toHaveLength(2))
+    const row = container.querySelector('.justified-row') as HTMLElement
+    const image = container.querySelector('.tile-image') as HTMLElement
+    // 行高由图片撑开，说明文字在下面占据自己的空间。
+    expect(row.style.height).toBe('')
+    expect(image.style.height).not.toBe('')
+  })
 })

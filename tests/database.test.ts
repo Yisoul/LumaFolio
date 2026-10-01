@@ -67,6 +67,28 @@ describe('AppDatabase', () => {
     expect(db.searchAssets({ folderPaths: ['D:\\LR\\ab'], limit: 10, offset: 0 }).total).toBe(1)
   })
 
+  it('uses the first image layer of a work as its cover', () => {
+    const root = db.createSourceRoot('C:\\photos')
+    const { assetId } = db.upsertMediaLocation({
+      rootId: root.id, absolutePath: 'C:\\photos\\cover.jpg', relativePath: 'cover.jpg',
+      contentHash: 'cover-hash', sizeBytes: 10, modifiedAt: 1, width: 100, height: 100, format: 'jpeg', orientation: 'square'
+    })
+    const album = db.createAlbum('封面相册')
+    db.addAssetToAlbum(album.id, assetId)
+
+    const withImage = db.createWork({ albumId: album.id, name: '有图作品', outputMode: 'pages', canvasWidth: 1080, canvasHeight: 1440, background: '#ffffff' })
+    const page = db.createPage(withImage.id, 0, '#ffffff')
+    db.createTextLayer(page.id, { x: 0, y: 0, width: 1, height: 0.1, rotation: 0, zIndex: 1, text: '标题', fontSize: 40, color: '#111111', fontFamily: 'Microsoft YaHei', fontWeight: 'bold', align: 'left' })
+    db.createImageLayer(page.id, { assetId, x: 0, y: 0.2, width: 1, height: 0.8, rotation: 0, zIndex: 2, fit: 'cover', radius: 0 })
+
+    const empty = db.createWork({ albumId: album.id, name: '空作品', outputMode: 'pages', canvasWidth: 1080, canvasHeight: 1440, background: '#ffffff' })
+    db.createPage(empty.id, 0, '#ffffff')
+
+    const covers = db.listWorkCovers(album.id)
+    expect(covers.find((cover) => cover.workId === withImage.id)?.assetId).toBe(assetId)
+    expect(covers.find((cover) => cover.workId === empty.id)?.assetId).toBeNull()
+  })
+
   it('merges identical content into one asset with multiple file locations', () => {
     const firstRoot = db.createSourceRoot('C:\\photos\\a')
     const secondRoot = db.createSourceRoot('C:\\photos\\b')

@@ -55,6 +55,7 @@ const api: AlbumStudioApi = {
   },
   works: {
     list: (albumId: string) => ipcRenderer.invoke('works:list', albumId),
+    listCovers: (albumId: string) => ipcRenderer.invoke('works:list-covers', albumId),
     create: (request) => ipcRenderer.invoke('works:create', request),
     get: (workId: string) => ipcRenderer.invoke('works:get', workId),
     update: (workId: string, changes) => ipcRenderer.invoke('works:update', workId, changes),

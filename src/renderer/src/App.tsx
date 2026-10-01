@@ -13,11 +13,12 @@ import JustifiedPhotoGrid from './JustifiedPhotoGrid'
 import Lightbox from './Lightbox'
 import PhotoInspector from './PhotoInspector'
 import ShortcutHelp from './ShortcutHelp'
+import Splitter from './Splitter'
 import ThumbSizeSlider from './ThumbSizeSlider'
 import TextInputDialog from './TextInputDialog'
 import WaterfallView from './WaterfallView'
 import { RATING_FILTER_OPTIONS, errorMessage, formatCamera, formatDate, previewUrl, ratingFilterPatch, ratingFilterValue, ratingStars, thumbnailUrl } from './helpers'
-import { IconAlbums, IconChevronLeft, IconDuplicates, IconExpand, IconLibrary, IconPanelRight, IconPlus, IconRefresh, IconSearch, IconSettings, IconTrash } from './icons'
+import { IconAlbums, IconChevronLeft, IconDuplicates, IconExpand, IconLibrary, IconPanelLeft, IconPanelRight, IconPlus, IconRefresh, IconSearch, IconSettings, IconTrash } from './icons'
 import { useShortcut } from './shortcuts'
 
 type NavKey = 'library' | 'duplicates' | 'albums' | 'settings'
@@ -37,7 +38,7 @@ export default function App() {
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null)
   const [toast, setToast] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
   const [albumDialogOpen, setAlbumDialogOpen] = useState(false)
-  const [settings, setSettings] = useState<AppSettings>({ thumbnailCacheLimitGb: 10, autoWatch: true, theme: 'dark', uiScale: 1, thumbnailSize: 200 })
+  const [settings, setSettings] = useState<AppSettings>({ thumbnailCacheLimitGb: 10, autoWatch: true, theme: 'dark', uiScale: 1, thumbnailSize: 200, treeWidth: 220, inspectorWidth: 320 })
   const settingsRef = useRef(settings)
   const saveTimerRef = useRef<number | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -253,6 +254,8 @@ function LibraryPage(props: {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const [inspectorOpen, setInspectorOpen] = useState(() => window.innerWidth >= 1280)
+  const [treeOpen, setTreeOpen] = useState(true)
+  const [hoveredFolder, setHoveredFolder] = useState<string | null>(null)
   const requestIdRef = useRef(0)
   const sentinelRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -377,41 +380,55 @@ function LibraryPage(props: {
     if (index >= 0) setLightboxIndex(index)
   }
   const toggleFolder = (path: string): void => {
-    const paths = filters.folderPaths ?? []
-    const next = paths.includes(path) ? paths.filter((item) => item !== path) : [...paths, path]
-    updateFilters({ folderPaths: next.length ? next : undefined })
+    // 单选：点一个目录就只筛它，父级和「全部文件夹」的选中态一起清掉。
+    const alreadySelected = (filters.folderPaths ?? []).includes(path)
+    updateFilters({ folderPaths: alreadySelected ? undefined : [path] })
   }
   const clearFilters = (): void => {
     setFilters({ sort: filters.sort ?? 'captured_desc' })
     setPage(0)
   }
+  const treeWidth = props.settings.treeWidth ?? 220
+  const inspectorWidth = props.settings.inspectorWidth ?? 320
+  const gridTemplateColumns = [
+    treeOpen ? `${treeWidth}px` : null,
+    treeOpen ? '4px' : null,
+    'minmax(0, 1fr)',
+    inspectorOpen ? '4px' : null,
+    inspectorOpen ? `${inspectorWidth}px` : null
+  ].filter(Boolean).join(' ')
 
   return (
-    <section className={`browse-page ${inspectorOpen ? 'with-inspector' : 'without-inspector'}`}>
-      <aside className="browse-side">
-        <div className="browse-side-head">
-          <div className="segmented small">
-            <button className={viewMode === 'folders' ? 'active' : ''} onClick={() => setViewMode('folders')}>按文件夹</button>
-            <button className={viewMode === 'all' ? 'active' : ''} onClick={() => { setViewMode('all'); updateFilters({ folderPaths: undefined }) }}>全部照片</button>
+    <section className="browse-page" style={{ gridTemplateColumns }}>
+      {treeOpen && <>
+        <aside className="browse-side">
+          <div className="browse-side-head">
+            <div className="segmented small">
+              <button className={viewMode === 'folders' ? 'active' : ''} onClick={() => setViewMode('folders')}>按文件夹</button>
+              <button className={viewMode === 'all' ? 'active' : ''} onClick={() => { setViewMode('all'); updateFilters({ folderPaths: undefined }) }}>全部照片</button>
+            </div>
           </div>
-        </div>
-        <div className="browse-side-scroll">
-          <FolderTree
-            folders={folders}
-            roots={props.roots}
-            selectedPaths={viewMode === 'all' ? [] : filters.folderPaths ?? []}
-            onToggle={(path) => { setViewMode('folders'); toggleFolder(path) }}
-            onClear={() => updateFilters({ folderPaths: undefined })}
-            totalCount={total}
-          />
-        </div>
-      </aside>
+          <div className="browse-side-scroll">
+            <FolderTree
+              folders={folders}
+              roots={props.roots}
+              selectedPaths={viewMode === 'all' ? [] : filters.folderPaths ?? []}
+              onToggle={(path) => { setViewMode('folders'); toggleFolder(path) }}
+              onClear={() => updateFilters({ folderPaths: undefined })}
+              totalCount={total}
+              linkedPath={hoveredFolder}
+            />
+          </div>
+        </aside>
+        <Splitter onResize={(delta) => props.onSettingsChange({ treeWidth: treeWidth + delta }, 'debounce')} />
+      </>}
 
       <div className="browse-main">
         <header className="browse-toolbar">
           <div className="browse-title"><strong>图库</strong><span>{total.toLocaleString()} 张{selected.size > 0 ? ` · 已选 ${selected.size}` : ''}</span></div>
           <ThumbSizeSlider value={props.settings.thumbnailSize} onChange={(value) => props.onSettingsChange({ thumbnailSize: value }, 'debounce')} />
           <div className="browse-tools">
+            <button type="button" className={`icon-button ${treeOpen ? 'active' : ''}`} title={treeOpen ? '隐藏文件夹栏' : '显示文件夹栏'} onClick={() => setTreeOpen((open) => !open)}><IconPanelLeft size={16} /></button>
             <button type="button" className="icon-button" title="全屏浏览（F）" onClick={() => setWaterfallOpen(true)}><IconExpand size={16} /></button>
             <button type="button" className="icon-button" title="重新扫描" onClick={() => void props.onScanAll()}><IconRefresh size={16} /></button>
             <button type="button" className="icon-button" title="添加文件夹" onClick={() => void props.onAddRoots()}><IconPlus size={16} /></button>
@@ -446,21 +463,25 @@ function LibraryPage(props: {
                   onActivate={activate}
                   onOpen={openLightbox}
                   onContextMenu={(event, photo) => setContextMenu({ x: event.clientX, y: event.clientY, asset: photo })}
+                  onHover={(photo) => setHoveredFolder(treeOpen ? photo?.primaryDirectoryPath ?? null : null)}
                 />}
           {photos.length > 0 && <div className="load-more" ref={sentinelRef}>{hasMore ? <button className="button secondary" disabled={loadingMore} onClick={() => setPage((current) => current + 1)}>{loadingMore ? '正在加载…' : '加载更多'}</button> : <span>已显示全部 {total.toLocaleString()} 张</span>}</div>}
         </div>
       </div>
 
-      {inspectorOpen && <PhotoInspector
-        asset={activePhoto}
-        albums={props.albums}
-        selectedCount={selected.size}
-        onClose={() => setInspectorOpen(false)}
-        onAddToAlbum={addToAlbum}
-        onToggleFavorite={toggleFavorite}
-        onRemoveFromLibrary={removeFromLibrary}
-        onToast={props.onToast}
-      />}
+      {inspectorOpen && <>
+        <Splitter onResize={(delta) => props.onSettingsChange({ inspectorWidth: inspectorWidth - delta }, 'debounce')} />
+        <PhotoInspector
+          asset={activePhoto}
+          albums={props.albums}
+          selectedCount={selected.size}
+          onClose={() => setInspectorOpen(false)}
+          onAddToAlbum={addToAlbum}
+          onToggleFavorite={toggleFavorite}
+          onRemoveFromLibrary={removeFromLibrary}
+          onToast={props.onToast}
+        />
+      </>}
 
       {lightboxIndex != null && photos[lightboxIndex] && <Lightbox assets={photos} index={lightboxIndex} onChangeIndex={setLightboxIndex} onClose={() => setLightboxIndex(null)} />}
       {waterfallOpen && <WaterfallView source={{ kind: 'library', title: '全屏浏览 · 图库', filters }} onClose={() => setWaterfallOpen(false)} onToast={props.onToast} />}
@@ -603,10 +624,18 @@ function AlbumDetail(props: {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const [coverAssetId, setCoverAssetId] = useState(props.album.coverAssetId)
+  const [workCovers, setWorkCovers] = useState<Record<string, string | null>>({})
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; asset: MediaAssetSummary } | null>(null)
   const [inspectorOpen, setInspectorOpen] = useState(() => window.innerWidth >= 1280)
   const load = useCallback(async () => { const [nextAssets, nextWorks] = await Promise.all([window.albumApi.albums.listAssets(props.album.id), window.albumApi.works.list(props.album.id)]); setAssets(nextAssets); setWorks(nextWorks) }, [props.album.id])
+  const loadCovers = useCallback(async () => {
+    try {
+      const covers = await window.albumApi.works.listCovers(props.album.id)
+      setWorkCovers(Object.fromEntries(covers.map((cover) => [cover.workId, cover.assetId])))
+    } catch { setWorkCovers({}) }
+  }, [props.album.id])
   useEffect(() => { void load() }, [load])
+  useEffect(() => { void loadCovers() }, [loadCovers])
   useEffect(() => setCoverAssetId(props.album.coverAssetId), [props.album.coverAssetId])
   useShortcut({
     id: 'album.lightbox',
@@ -664,9 +693,11 @@ function AlbumDetail(props: {
     } catch (error) { props.onToast({ kind: 'error', text: errorMessage(error) }) }
   }
   const allSelected = assets.length > 0 && selected.size === assets.length
+  const inspectorWidth = props.settings.inspectorWidth ?? 320
+  const albumColumns = ['minmax(0, 1fr)', inspectorOpen ? '4px' : null, inspectorOpen ? `${inspectorWidth}px` : null].filter(Boolean).join(' ')
 
   return (
-    <section className={`browse-page album-browse ${inspectorOpen ? 'with-inspector' : 'without-inspector'}`}>
+    <section className="browse-page album-browse" style={{ gridTemplateColumns: albumColumns }}>
       <div className="browse-main">
         <header className="browse-toolbar">
           <div className="browse-title">
@@ -705,21 +736,24 @@ function AlbumDetail(props: {
             />}
           <section className="section-block">
             <div className="section-heading"><h2>作品版本</h2></div>
-            {works.length === 0 ? <p className="subtle">还没有作品。一个相册可以保存多套不同排版。</p> : <div className="work-grid">{works.map((work) => <article className="work-card" key={work.id}><button className="work-open" onClick={() => props.onOpenWork(work.id)}><div className="work-preview"><span>{work.outputMode === 'long_image' ? '长图' : '多页'}</span></div><strong>{work.name}</strong><small>{work.canvasWidth} × {work.canvasHeight}</small></button><button className="work-delete" onClick={() => void removeWork(work)}>删除作品</button></article>)}</div>}
+            {works.length === 0 ? <p className="subtle">还没有作品。一个相册可以保存多套不同排版。</p> : <div className="work-grid">{works.map((work) => { const cover = workCovers[work.id]; return <article className="work-card" key={work.id}><button className="work-open" onClick={() => props.onOpenWork(work.id)}><div className="work-preview">{cover ? <img src={thumbnailUrl(cover, 640)} alt={work.name} loading="lazy" /> : <span>{work.outputMode === 'long_image' ? '长图' : '多页'}</span>}</div><strong>{work.name}</strong><small>{work.canvasWidth} × {work.canvasHeight}</small></button><button className="work-delete" onClick={() => void removeWork(work)}>删除作品</button></article> })}</div>}
           </section>
         </div>
       </div>
 
-      {inspectorOpen && <PhotoInspector
-        asset={activePhoto}
-        albums={[]}
-        selectedCount={selected.size}
-        onClose={() => setInspectorOpen(false)}
-        onAddToAlbum={async () => undefined}
-        onToggleFavorite={toggleFavorite}
-        onRemoveFromLibrary={removeAsset}
-        onToast={props.onToast}
-      />}
+      {inspectorOpen && <>
+        <Splitter onResize={(delta) => props.onSettingsChange({ inspectorWidth: inspectorWidth - delta }, 'debounce')} />
+        <PhotoInspector
+          asset={activePhoto}
+          albums={[]}
+          selectedCount={selected.size}
+          onClose={() => setInspectorOpen(false)}
+          onAddToAlbum={async () => undefined}
+          onToggleFavorite={toggleFavorite}
+          onRemoveFromLibrary={removeAsset}
+          onToast={props.onToast}
+        />
+      </>}
 
       {pickerOpen && <AssetPicker title="选择照片加入相册" thumbnailSize={props.settings.thumbnailSize} onClose={() => setPickerOpen(false)} onConfirm={async (ids) => { try { await window.albumApi.albums.addAssets(props.album.id, ids); setPickerOpen(false); await load() } catch (error) { props.onToast({ kind: 'error', text: errorMessage(error) }) } }} />}
       {lightboxIndex != null && assets[lightboxIndex] && <Lightbox assets={assets} index={lightboxIndex} onChangeIndex={setLightboxIndex} onClose={() => setLightboxIndex(null)} />}
@@ -793,7 +827,7 @@ function AssetPicker(props: { title: string; thumbnailSize: number; onClose: () 
             folders={folders}
             roots={[]}
             selectedPaths={viewMode === 'all' ? [] : filters.folderPaths ?? []}
-            onToggle={(path) => { setViewMode('folders'); const paths = filters.folderPaths ?? []; const next = paths.includes(path) ? paths.filter((item) => item !== path) : [...paths, path]; updateFilters({ folderPaths: next.length ? next : undefined }) }}
+            onToggle={(path) => { setViewMode('folders'); updateFilters({ folderPaths: (filters.folderPaths ?? []).includes(path) ? undefined : [path] }) }}
             onClear={() => updateFilters({ folderPaths: undefined })}
             totalCount={total}
           />

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MediaAssetSummary, SearchFilters } from '../../shared/types'
 import Lightbox from './Lightbox'
 import { useShortcut } from './shortcuts'
@@ -267,7 +267,8 @@ export default function WaterfallView(props: WaterfallViewProps) {
   )
 }
 
-function WaterfallItem(props: {
+/** 只在自身状态变化时重渲染，避免长列表整体重绘造成切换卡顿。 */
+const WaterfallItem = memo(function WaterfallItem(props: {
   asset: MediaAssetSummary
   selected: boolean
   marked: boolean
@@ -295,7 +296,7 @@ function WaterfallItem(props: {
       {props.marked && <span className="waterfall-mark-badge" title="已加入临时相册">{props.pending ? '…' : '✓'}</span>}
     </button>
   )
-}
+}, (prev, next) => prev.asset.id === next.asset.id && prev.selected === next.selected && prev.marked === next.marked && prev.pending === next.pending)
 
 function fileName(path: string | null): string {
   if (!path) return '文件缺失'
