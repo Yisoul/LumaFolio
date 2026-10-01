@@ -2,6 +2,7 @@ import { mkdir, readdir, rename, stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import sharp from 'sharp'
 import type { AppDatabase } from './database'
+import { loadSourceForSharp } from './raw'
 
 export class ThumbnailService {
   private readonly pending = new Map<string, Promise<string>>()
@@ -93,7 +94,9 @@ export class ThumbnailService {
     // 大图只求快，缩略图才值得多花点编码时间换体积。
     const effort = safeSize >= 1280 ? 2 : 4
     try {
-      await sharp(sourcePath, { failOn: 'none' })
+      // RAW 先换成文件里内嵌的 JPEG 预览，sharp 本身解不了 RAW 像素。
+      const source = await loadSourceForSharp(sourcePath)
+      await sharp(source, { failOn: 'none' })
         .rotate()
         .resize({ width: safeSize, height: safeSize, fit: 'inside', withoutEnlargement: true })
         .webp({ quality, effort })

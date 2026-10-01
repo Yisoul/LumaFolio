@@ -42,6 +42,22 @@ describe('LibraryScanner', () => {
     expect(db.listDuplicateAssets()[0].locationCount).toBe(2)
   })
 
+  it('indexes RAW files through the embedded camera preview', async () => {
+    const small = await sharp({ create: { width: 160, height: 120, channels: 3, background: '#111111' } }).jpeg({ quality: 70 }).toBuffer()
+    const preview = await sharp({ create: { width: 1200, height: 800, channels: 3, background: '#4488cc' } }).jpeg({ quality: 70 }).toBuffer()
+    const padding = Buffer.alloc(4096, 7)
+    await writeFile(join(rootDir, 'DSC_0001.NEF'), Buffer.concat([padding, small, padding, preview, padding]))
+
+    const source = db.createSourceRoot(rootDir)
+    const result = await scanner.scanRoot(source)
+
+    expect(result.discovered).toBe(1)
+    expect(result.indexed).toBe(1)
+    const [asset] = db.searchAssets({ limit: 10, offset: 0 }).items
+    expect(asset.format).toBe('nef')
+    expect([asset.width, asset.height]).toEqual([1200, 800])
+  })
+
   it('keeps album references when a unique original is overwritten with content that already exists', async () => {
     const firstPath = join(rootDir, 'first.jpg')
     const secondPath = join(rootDir, 'second.jpg')

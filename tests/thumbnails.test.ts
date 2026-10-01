@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import sharp from 'sharp'
@@ -57,5 +57,33 @@ describe('ThumbnailService', () => {
     expect(file.size).toBeGreaterThan(0)
     expect(metadata.format).toBe('webp')
     expect(Math.max(metadata.width ?? 0, metadata.height ?? 0)).toBeLessThanOrEqual(320)
+  })
+
+  it('renders RAW thumbnails from the embedded preview, not the TIFF thumbnail', async () => {
+    const rawPath = join(directory, 'DSC_0009.nef')
+    const small = await sharp({ create: { width: 160, height: 120, channels: 3, background: '#101010' } }).jpeg({ quality: 70 }).toBuffer()
+    const preview = await sharp({ create: { width: 2400, height: 1600, channels: 3, background: '#446699' } }).jpeg({ quality: 70 }).toBuffer()
+    const padding = Buffer.alloc(4096, 3)
+    await writeFile(rawPath, Buffer.concat([padding, small, padding, preview, padding]))
+    const root = db.listSourceRoots()[0]
+    const rawAssetId = db.upsertMediaLocation({
+      rootId: root.id,
+      absolutePath: rawPath,
+      relativePath: 'DSC_0009.nef',
+      contentHash: 'raw-source',
+      sizeBytes: 100,
+      modifiedAt: 1,
+      width: 2400,
+      height: 1600,
+      format: 'nef',
+      orientation: 'landscape'
+    }).assetId
+
+    const service = new ThumbnailService(db, join(directory, 'cache'))
+    const thumbnail = await service.getThumbnail(rawAssetId, 320)
+    const metadata = await sharp(await readFile(thumbnail)).metadata()
+
+    expect(metadata.format).toBe('webp')
+    expect(Math.max(metadata.width ?? 0, metadata.height ?? 0)).toBe(320)
   })
 })

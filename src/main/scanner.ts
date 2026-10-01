@@ -6,8 +6,9 @@ import { watch, type FSWatcher } from 'chokidar'
 import * as exifr from 'exifr'
 import sharp from 'sharp'
 import type { AppDatabase, MediaLocationInput, Orientation, SourceRoot } from './database'
+import { RAW_EXTENSIONS, extractRawPreview } from './raw'
 
-const SUPPORTED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png'])
+const SUPPORTED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', ...RAW_EXTENSIONS])
 const IGNORED_DIRECTORIES = new Set(['.git', 'node_modules', '$recycle.bin', 'system volume information'])
 
 /** 元数据结构版本：升级后存量位置会重读一次元数据（不重新哈希）。 */
@@ -35,6 +36,7 @@ export interface RatingMetadata {
 }
 
 interface ExifRecord extends RatingMetadata {
+  Orientation?: number
   DateTimeOriginal?: Date
   CreateDate?: Date
   Make?: string
@@ -219,14 +221,12 @@ export class LibraryScanner {
     if (unchangedFile && existing?.metadataVersion === CURRENT_METADATA_VERSION) {
       return { id: existing.id, assetId: existing.assetId }
     }
-    const metadata = await sharp(filePath, { failOn: 'none' }).metadata()
-    if (!metadata.width || !metadata.height) throw new Error('无法读取图片尺寸')
-
     const exif = await this.readExif(filePath)
+    const image = await readImageInfo(filePath)
     const contentHash = unchangedFile && existing
       ? this.db.getAssetContentHash(existing.assetId) ?? await hashFile(filePath)
       : await hashFile(filePath)
-    const orientation = normalizeOrientation(metadata.orientation, metadata.width, metadata.height)
+    const orientation = normalizeOrientation(exif.Orientation ?? image.orientation, image.width, image.height)
     const input: MediaLocationInput = {
       rootId: root.id,
       absolutePath: filePath,
@@ -235,9 +235,9 @@ export class LibraryScanner {
       sizeBytes: fileStat.size,
       modifiedAt: fileStat.mtimeMs,
       metadataVersion: CURRENT_METADATA_VERSION,
-      width: metadata.width,
-      height: metadata.height,
-      format: metadata.format ?? extname(filePath).slice(1).toLowerCase(),
+      width: image.width,
+      height: image.height,
+      format: image.format,
       capturedAt: normalizeDate(exif.DateTimeOriginal ?? exif.CreateDate),
       cameraMake: exif.Make ?? null,
       cameraModel: exif.Model ?? null,
@@ -268,6 +268,31 @@ export class LibraryScanner {
       return {}
     }
   }
+}
+
+interface ImageInfo {
+  width: number
+  height: number
+  format: string
+  orientation?: number
+}
+
+/**
+ * RAW 的尺寸取文件里内嵌预览的尺寸（相机写进去的通常是全尺寸），
+ * 万一没有可用预览，再退回让 libvips 按 TIFF 打开取尺寸。
+ */
+async function readImageInfo(filePath: string): Promise<ImageInfo> {
+  const extension = extname(filePath).slice(1).toLowerCase()
+  if (RAW_EXTENSIONS.has(`.${extension}`)) {
+    const preview = await extractRawPreview(filePath).catch(() => null)
+    if (preview) return { width: preview.width, height: preview.height, format: extension }
+    const fallback = await sharp(filePath, { failOn: 'none' }).metadata()
+    if (!fallback.width || !fallback.height) throw new Error('无法读取 RAW 预览')
+    return { width: fallback.width, height: fallback.height, format: extension, orientation: fallback.orientation }
+  }
+  const metadata = await sharp(filePath, { failOn: 'none' }).metadata()
+  if (!metadata.width || !metadata.height) throw new Error('无法读取图片尺寸')
+  return { width: metadata.width, height: metadata.height, format: metadata.format ?? extension, orientation: metadata.orientation }
 }
 
 function normalizeOrientation(value: number | undefined, width: number, height: number): Orientation {

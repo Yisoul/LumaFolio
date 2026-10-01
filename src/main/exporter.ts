@@ -4,6 +4,7 @@ import fontkit from 'fontkit'
 import sharp from 'sharp'
 import type { AppDatabase, Layer, Page, Work } from './database'
 import type { FontService } from './fonts'
+import { loadSourceForSharp } from './raw'
 
 export interface ExportOptions {
   directory: string
@@ -81,7 +82,7 @@ export class WorkExporter {
         const location = this.db.getPreferredLocation(layer.assetId)
         if (!location) continue
         const radius = numberStyle(layer.style.radius)
-        const resized = await sharp(location.absolutePath)
+        const resized = await sharp(await loadSourceForSharp(location.absolutePath))
           .rotate()
           .resize(layerWidth, layerHeight, {
             fit: layer.style.fit === 'contain' ? 'contain' : layer.style.fit === 'stretch' ? 'fill' : 'cover',
