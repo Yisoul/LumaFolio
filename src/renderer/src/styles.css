@@ -321,7 +321,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .toast.error { border-color: var(--danger); color: var(--danger); }
 .toast button { border: 0; color: inherit; background: transparent; font-size: 16px; }
 
-.editor-shell { display: grid; grid-template-rows: 52px 1fr; width: 100%; height: 100%; background: var(--page-bg); }
+.editor-shell { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 52px 1fr; width: 100%; height: 100%; overflow: hidden; background: var(--page-bg); }
 .editor-header { display: grid; grid-template-columns: 180px 1fr auto; align-items: center; gap: 16px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--paper); }
 .editor-title { display: grid; width: min(460px, 100%); justify-self: center; text-align: center; }
 .editor-name-input { width: 100%; padding: 4px 8px; border-color: transparent; background: transparent; font-size: 14px; font-weight: 600; text-align: center; }
@@ -507,7 +507,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .page { height: 100%; overflow-y: auto; }
 .page.settings-page { max-width: 980px; margin: 0 auto; }
 
-.browse-page { display: grid; height: 100%; min-height: 0; background: var(--page-bg); }
+.browse-page { display: grid; height: 100%; min-width: 0; min-height: 0; overflow: hidden; background: var(--page-bg); }
 .browse-page.with-inspector { grid-template-columns: 220px minmax(0, 1fr) 320px; }
 .browse-page.without-inspector { grid-template-columns: 220px minmax(0, 1fr); }
 .browse-page.album-browse.with-inspector { grid-template-columns: minmax(0, 1fr) 320px; }
@@ -516,10 +516,12 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .splitter::after { content: ''; position: absolute; top: 0; bottom: 0; left: 1px; width: 2px; background: transparent; transition: background .14s ease-out; }
 .splitter:hover::after, .splitter:active::after { background: var(--accent); }
 
-.browse-side { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; border-right: 1px solid var(--line); background: var(--paper); }
+/* 这三个面板都是"行布局的网格"，必须把列显式锁成 minmax(0, 1fr)：
+   隐式 auto 列会按子元素最大内容宽度撑开，整块内容就会溢出自己的栏、盖到相邻栏上。 */
+.browse-side { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); min-height: 0; overflow: hidden; border-right: 1px solid var(--line); background: var(--paper); }
 .browse-side-head { padding: 8px; border-bottom: 1px solid var(--line); }
 .browse-side-scroll { min-height: 0; overflow-y: auto; padding: 6px; }
-.browse-main { display: grid; grid-template-rows: auto auto minmax(0, 1fr); min-width: 0; min-height: 0; }
+.browse-main { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); min-width: 0; min-height: 0; overflow: hidden; }
 .browse-toolbar { display: grid; grid-template-columns: minmax(110px, auto) 1fr auto; align-items: center; gap: 14px; padding: 7px 14px; border-bottom: 1px solid var(--line); background: var(--paper); }
 .browse-title { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .browse-title .icon-button { margin-right: 2px; }
@@ -539,7 +541,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .button.compact .icon-button { margin-right: 4px; }
 .button > svg { vertical-align: -2px; margin-right: 5px; }
 
-.search-field { display: flex; align-items: center; gap: 6px; min-width: 190px; height: 28px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--muted); background: var(--paper-strong); }
+.search-field { display: flex; align-items: center; gap: 6px; min-width: 150px; max-width: 320px; height: 28px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--muted); background: var(--paper-strong); }
 .search-field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--soft-accent); }
 .search-field input { flex: 1; min-width: 0; padding: 0; border: 0; box-shadow: none; background: transparent; color: var(--ink); font-size: 12px; }
 
@@ -579,7 +581,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .chip-date label { display: grid; gap: 3px; color: var(--muted); font-size: 10px; }
 
 /* ---------- 对齐行图片网格 ---------- */
-.justified-grid { display: grid; gap: 6px; }
+.justified-grid { display: grid; gap: 6px; min-width: 0; }
 .justified-row { display: flex; align-items: flex-start; gap: 6px; }
 .tile { position: relative; margin: 0; min-width: 0; }
 .tile-image { position: relative; display: block; width: 100%; padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 2px; background: var(--image-bg); }
@@ -596,7 +598,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .tile-stars { color: var(--star); font-size: 10px; letter-spacing: -1px; }
 
 /* ---------- 右侧信息栏 ---------- */
-.inspector-panel { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; border-left: 1px solid var(--line); background: var(--paper); }
+.inspector-panel { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); min-height: 0; overflow: hidden; border-left: 1px solid var(--line); background: var(--paper); }
 .inspector-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--line); }
 .inspector-header strong { font-size: 12px; font-weight: 600; }
 .inspector-body { display: grid; align-content: start; gap: 10px; min-height: 0; overflow-y: auto; padding: 10px; }
@@ -627,7 +629,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 /* ---------- 选图弹窗 ---------- */
 .picker-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 10px; min-height: 0; height: 100%; }
 .picker-side { overflow-y: auto; padding: 4px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
-.picker-main { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; }
+.picker-main { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); min-width: 0; }
 .picker-toolbar { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; }
 .picker-toolbar .search-field { flex: 1; }
 .picker-count { color: var(--muted); font-size: 11px; white-space: nowrap; }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MediaAssetSummary } from '../../shared/types'
-import { computeJustifiedRows } from './grid'
+import { computeJustifiedRows, resolveContainerWidth, viewportSignature } from './grid'
 import { fileName, ratingStars, thumbnailUrl } from './helpers'
 import { IconCheck, IconStar } from './icons'
 
@@ -23,6 +23,14 @@ export interface JustifiedPhotoGridProps {
   maxSize?: number
 }
 
+/** 量父级滚动容器的可用宽度：网格自身的宽度会被行宽撑开，不能用它自己当基准。 */
+function measureWidth(node: HTMLDivElement): number {
+  const host = node.parentElement
+  if (!host) return node.clientWidth
+  const styles = window.getComputedStyle(host)
+  return resolveContainerWidth(host.clientWidth, Number.parseFloat(styles.paddingLeft), Number.parseFloat(styles.paddingRight))
+}
+
 export default function JustifiedPhotoGrid(props: JustifiedPhotoGridProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
@@ -41,16 +49,28 @@ export default function JustifiedPhotoGrid(props: JustifiedPhotoGridProps) {
   useEffect(() => {
     const node = containerRef.current
     if (!node) return
-    const update = () => setContainerWidth(node.clientWidth)
+    const update = () => setContainerWidth(measureWidth(node))
     update()
     // 页面缩放（Electron zoom）不一定触发 ResizeObserver，这里再挂一次 resize。
     window.addEventListener('resize', update)
-    if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(update)
-    observer.observe(node)
+    window.visualViewport?.addEventListener('resize', update)
+    // 改界面缩放时 Electron 连 resize 都不派发，只能自己按视口签名轮询兜底，
+    // 否则网格会一直用缩放前的宽度排布，整片照片盖到右侧信息栏上。
+    let signature = viewportSignature(window.innerWidth, window.innerHeight, window.devicePixelRatio)
+    const watcher = window.setInterval(() => {
+      const next = viewportSignature(window.innerWidth, window.innerHeight, window.devicePixelRatio)
+      if (next === signature) return
+      signature = next
+      update()
+    }, 250)
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update)
+    observer?.observe(node)
+    if (observer && node.parentElement) observer.observe(node.parentElement)
     return () => {
       window.removeEventListener('resize', update)
-      observer.disconnect()
+      window.visualViewport?.removeEventListener('resize', update)
+      window.clearInterval(watcher)
+      observer?.disconnect()
     }
   }, [props.remeasureKey])
 
@@ -58,7 +78,7 @@ export default function JustifiedPhotoGrid(props: JustifiedPhotoGridProps) {
   useEffect(() => {
     const node = containerRef.current
     if (!node) return
-    const frame = window.requestAnimationFrame(() => setContainerWidth(node.clientWidth))
+    const frame = window.requestAnimationFrame(() => setContainerWidth(measureWidth(node)))
     return () => window.cancelAnimationFrame(frame)
   }, [props.remeasureKey, props.photos.length])
 

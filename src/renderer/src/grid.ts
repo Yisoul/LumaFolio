@@ -33,6 +33,26 @@ function aspectOf(item: JustifiedInput): number {
 }
 
 /**
+ * 由宿主滚动容器算出网格可用宽度：扣掉左右内边距（clientWidth 已排除滚动条），不会小于 0。
+ * 网格自己可能被行宽撑开，所以量宽度时必须量父容器，否则会形成“越量越宽”的自反馈。
+ */
+export function resolveContainerWidth(hostClientWidth: number, paddingLeft: number, paddingRight: number): number {
+  const width = Number.isFinite(hostClientWidth) ? hostClientWidth : 0
+  const left = Number.isFinite(paddingLeft) ? paddingLeft : 0
+  const right = Number.isFinite(paddingRight) ? paddingRight : 0
+  return Math.max(0, Math.round(width - left - right))
+}
+
+/**
+ * 视口签名：Electron 用 setZoomFactor 改界面缩放时不会派发 resize，
+ * ResizeObserver 也不触发，只能靠比对签名发现变化后重新测量。
+ */
+export function viewportSignature(width: number, height: number, devicePixelRatio: number): string {
+  const ratio = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1
+  return `${Math.round(width)}x${Math.round(height)}@${ratio}`
+}
+
+/**
  * 按原图宽高比排"对齐行"：同一行等高、宽度按比例、行宽铺满容器。
  * 最后一行为不完整行时保持目标行高，不拉伸。
  */

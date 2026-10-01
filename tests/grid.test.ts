@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeJustifiedRows } from '../src/renderer/src/grid'
+import { computeJustifiedRows, resolveContainerWidth, viewportSignature } from '../src/renderer/src/grid'
 
 const landscape = (id: string) => ({ id, width: 3000, height: 2000 })
 const portrait = (id: string) => ({ id, width: 2000, height: 3000 })
@@ -55,5 +55,32 @@ describe('computeJustifiedRows', () => {
 
   it('returns an empty layout for no photos', () => {
     expect(computeJustifiedRows([], { containerWidth: 800, targetHeight: 200 })).toEqual({ rows: [], height: 0 })
+  })
+})
+
+describe('resolveContainerWidth', () => {
+  it('subtracts the horizontal padding of the scroll container', () => {
+    expect(resolveContainerWidth(900, 14, 14)).toBe(872)
+  })
+
+  it('never returns a negative width and tolerates missing values', () => {
+    expect(resolveContainerWidth(20, 14, 14)).toBe(0)
+    expect(resolveContainerWidth(Number.NaN, 14, 14)).toBe(0)
+    expect(resolveContainerWidth(600, Number.NaN, Number.NaN)).toBe(600)
+  })
+})
+
+describe('viewportSignature', () => {
+  it('rounds the viewport and keeps the device pixel ratio', () => {
+    expect(viewportSignature(1536.4, 807.6, 1.25)).toBe('1536x808@1.25')
+    expect(viewportSignature(1200, 800, 1)).toBe('1200x800@1')
+  })
+
+  it('changes when only the device pixel ratio does', () => {
+    expect(viewportSignature(1920, 1009, 1)).not.toBe(viewportSignature(1920, 1009, 1.25))
+  })
+
+  it('falls back to ratio 1 for broken values', () => {
+    expect(viewportSignature(800, 600, Number.NaN)).toBe('800x600@1')
   })
 })
