@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Album, MediaAssetSummary, MediaLocation } from '../../shared/types'
-import { errorMessage, fileName, formatDateTime, formatDimensions, formatFileSize, previewUrl, ratingStars } from './helpers'
+import { errorMessage, fileName, formatDateTime, formatDimensions, formatFileSize, previewUrl, ratingStars, thumbnailUrl } from './helpers'
 import { IconClose, IconLocation, IconStar, IconTrash } from './icons'
 
 interface PhotoInspectorProps {
@@ -17,10 +17,12 @@ interface PhotoInspectorProps {
 export default function PhotoInspector(props: PhotoInspectorProps) {
   const [locations, setLocations] = useState<MediaLocation[]>([])
   const [previewFailed, setPreviewFailed] = useState(false)
+  const [previewLoaded, setPreviewLoaded] = useState(false)
   const asset = props.asset
 
   useEffect(() => {
     setPreviewFailed(false)
+    setPreviewLoaded(false)
     if (!asset) { setLocations([]); return }
     void window.albumApi.library.listLocations(asset.id).then(setLocations).catch(() => setLocations([]))
   }, [asset?.id])
@@ -65,7 +67,17 @@ export default function PhotoInspector(props: PhotoInspectorProps) {
           <div className="inspector-preview">
             {asset.missing || previewFailed
               ? <div className="inspector-preview-missing">原图不可用</div>
-              : <img src={previewUrl(asset.id, 1400)} alt={fileName(asset.primaryPath)} onError={() => setPreviewFailed(true)} />}
+              : <>
+                <img className="inspector-preview-thumb" src={thumbnailUrl(asset.id, 640)} alt="" aria-hidden="true" />
+                <img
+                  className={`inspector-preview-full ${previewLoaded ? 'loaded' : ''}`}
+                  src={previewUrl(asset.id, 1600)}
+                  alt={fileName(asset.primaryPath)}
+                  decoding="async"
+                  onLoad={() => setPreviewLoaded(true)}
+                  onError={() => setPreviewFailed(true)}
+                />
+              </>}
           </div>
 
           <div className="inspector-name" title={asset.primaryPath ?? ''}>{fileName(asset.primaryPath)}</div>

@@ -1,6 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import type { MediaAssetSummary } from '../../shared/types'
-import { formatCamera, formatDate, previewUrl, ratingStars } from './helpers'
+import { formatCamera, formatDate, previewUrl, ratingStars, thumbnailUrl } from './helpers'
 import { useShortcut } from './shortcuts'
 
 export interface LightboxProps {
@@ -17,6 +17,7 @@ export interface LightboxProps {
 export default function Lightbox(props: LightboxProps) {
   const asset = props.assets[props.index] ?? null
   const marked = props.marked ?? new Set<string>()
+  const [loadedId, setLoadedId] = useState<string | null>(null)
 
   // 预加载相邻两张，翻页时不用等解码。
   useEffect(() => {
@@ -25,7 +26,7 @@ export default function Lightbox(props: LightboxProps) {
       if (!neighbor || neighbor.missing) continue
       const image = new window.Image()
       image.decoding = 'async'
-      image.src = previewUrl(neighbor.id, 2560)
+      image.src = previewUrl(neighbor.id, 1600)
     }
   }, [props.index, props.assets])
 
@@ -55,7 +56,17 @@ export default function Lightbox(props: LightboxProps) {
       <button className="lightbox-nav previous" onClick={() => step(-1)} aria-label="上一张">‹</button>
       {asset.missing
         ? <div className="lightbox-missing">原图不可用</div>
-        : <img className="lightbox-image" src={previewUrl(asset.id, 2560)} alt={fileName(asset.primaryPath)} />}
+        : <>
+          {/* 先用已经缓存的缩略图顶上，大图加载好再淡入，避免点开时白屏等待。 */}
+          <img className="lightbox-thumb" src={thumbnailUrl(asset.id, 960)} alt="" aria-hidden="true" />
+          <img
+            className={`lightbox-image ${loadedId === asset.id ? 'loaded' : ''}`}
+            src={previewUrl(asset.id, 1600)}
+            alt={fileName(asset.primaryPath)}
+            decoding="async"
+            onLoad={() => setLoadedId(asset.id)}
+          />
+        </>}
       <button className="lightbox-nav next" onClick={() => step(1)} aria-label="下一张">›</button>
       <div className="lightbox-counter">{props.index + 1} / {props.assets.length}</div>
       <div className="lightbox-info">

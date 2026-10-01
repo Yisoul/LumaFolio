@@ -24,6 +24,8 @@ interface WaterfallViewProps {
   source: WaterfallSource
   onClose: () => void
   onToast: (toast: { kind: 'info' | 'error'; text: string }) => void
+  /** 新建临时相册后通知外层刷新相册列表。 */
+  onAlbumsChanged?: () => void | Promise<void>
 }
 
 const PAGE_SIZE = 120
@@ -149,6 +151,7 @@ export default function WaterfallView(props: WaterfallViewProps) {
         const album = await window.albumApi.albums.create(attempt === 0 ? base : `${base} (${attempt + 1})`)
         tempAlbumRef.current = album.id
         setTempAlbumName(album.name)
+        await props.onAlbumsChanged?.()
         return album
       } catch (error) {
         lastError = error

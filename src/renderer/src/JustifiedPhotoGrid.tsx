@@ -15,6 +15,8 @@ export interface JustifiedPhotoGridProps {
   onContextMenu?: (event: React.MouseEvent, asset: MediaAssetSummary) => void
   /** 鼠标移到某张照片上时回调，用来联动高亮左侧文件夹。 */
   onHover?: (asset: MediaAssetSummary | null) => void
+  /** 任何会影响可用宽度的变化（面板开关、栏宽、界面缩放）都要重新量一次。 */
+  remeasureKey?: string
 }
 
 export default function JustifiedPhotoGrid(props: JustifiedPhotoGridProps) {
@@ -26,11 +28,24 @@ export default function JustifiedPhotoGrid(props: JustifiedPhotoGridProps) {
     if (!node) return
     const update = () => setContainerWidth(node.clientWidth)
     update()
+    // 页面缩放（Electron zoom）不一定触发 ResizeObserver，这里再挂一次 resize。
+    window.addEventListener('resize', update)
     if (typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(update)
     observer.observe(node)
-    return () => observer.disconnect()
-  }, [])
+    return () => {
+      window.removeEventListener('resize', update)
+      observer.disconnect()
+    }
+  }, [props.remeasureKey])
+
+  // 面板开关/栏宽变化后补测一次，避免用旧的容器宽度排出过宽的行。
+  useEffect(() => {
+    const node = containerRef.current
+    if (!node) return
+    const frame = window.requestAnimationFrame(() => setContainerWidth(node.clientWidth))
+    return () => window.cancelAnimationFrame(frame)
+  }, [props.remeasureKey, props.photos.length])
 
   const assetById = useMemo(() => new Map(props.photos.map((photo) => [photo.id, photo])), [props.photos])
   const layout = useMemo(() => computeJustifiedRows(

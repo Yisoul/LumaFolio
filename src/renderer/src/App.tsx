@@ -51,6 +51,9 @@ export default function App() {
   const refreshAlbums = useCallback(async () => setAlbums(await window.albumApi.albums.list()), [])
   const refreshTemplates = useCallback(async () => setTemplates(await window.albumApi.templates.list()), [])
 
+  // 切到相册页时重新拉一次列表，避免全屏浏览里新建的临时相册看不到。
+  useEffect(() => { if (nav === 'albums') void refreshAlbums().catch(() => undefined) }, [nav, refreshAlbums])
+
   const refreshAll = useCallback(async () => {
     await Promise.all([refreshStats(), refreshRoots(), refreshAlbums(), refreshTemplates()])
   }, [refreshAlbums, refreshRoots, refreshStats, refreshTemplates])
@@ -223,7 +226,7 @@ export default function App() {
             <span>{scanProgress.processed} / {scanProgress.discovered}</span>
           </div>
         )}
-        {nav === 'library' && <LibraryPage roots={roots} albums={albums} onAddRoots={addRoots} onScanAll={scanAll} onRefreshStats={refreshStats} onToast={setToast} focusSearch={searchFocusRequest} onSearchFocused={() => setSearchFocusRequest(false)} settings={settings} onSettingsChange={applySettings} />}
+        {nav === 'library' && <LibraryPage roots={roots} albums={albums} onAddRoots={addRoots} onScanAll={scanAll} onRefreshStats={refreshStats} onToast={setToast} focusSearch={searchFocusRequest} onSearchFocused={() => setSearchFocusRequest(false)} settings={settings} onSettingsChange={applySettings} onAlbumsChanged={refreshAlbums} />}
         {nav === 'duplicates' && <DuplicatesPage onToast={setToast} onRefresh={refreshStats} />}
         {nav === 'albums' && <AlbumsPage albums={albums} selectedAlbumId={selectedAlbumId} onSelectAlbum={setSelectedAlbumId} onRefreshAlbums={refreshAlbums} templates={templates} onOpenWork={setEditingWorkId} onToast={setToast} onCreateAlbum={() => setAlbumDialogOpen(true)} settings={settings} onSettingsChange={applySettings} />}
         {nav === 'settings' && <SettingsPage roots={roots} onAddRoots={addRoots} onRemoveRoot={removeRoot} onSetRootEnabled={setRootEnabled} onScanAll={scanAll} onRefreshStats={refreshStats} onToast={setToast} settings={settings} onSettingsChange={applySettings} onUiScaleChange={changeUiScale} />}
@@ -250,6 +253,7 @@ function LibraryPage(props: {
   onSearchFocused: () => void
   settings: AppSettings
   onSettingsChange: (patch: Partial<AppSettings>, persist?: 'now' | 'debounce') => void
+  onAlbumsChanged: () => Promise<void>
 }) {
   const pageSize = 120
   const [filters, setFilters] = useState<Omit<SearchFilters, 'limit' | 'offset'>>({ sort: 'captured_desc' })
@@ -487,6 +491,7 @@ function LibraryPage(props: {
                   onOpen={openLightbox}
                   onContextMenu={(event, photo) => setContextMenu({ x: event.clientX, y: event.clientY, asset: photo })}
                   onHover={(photo) => setHoveredFolder(treeOpen ? photo?.primaryDirectoryPath ?? null : null)}
+                  remeasureKey={`${treeOpen}|${inspectorOpen}|${treeWidth}|${inspectorWidth}|${props.settings.thumbnailSize}|${props.settings.uiScale}`}
                 />}
           {photos.length > 0 && <div className="load-more" ref={sentinelRef}>{hasMore ? <button className="button secondary" disabled={loadingMore} onClick={() => setPage((current) => current + 1)}>{loadingMore ? '正在加载…' : '加载更多'}</button> : <span>已显示全部 {total.toLocaleString()} 张</span>}</div>}
         </div>
@@ -507,7 +512,7 @@ function LibraryPage(props: {
       </>}
 
       {lightboxIndex != null && photos[lightboxIndex] && <Lightbox assets={photos} index={lightboxIndex} onChangeIndex={setLightboxIndex} onClose={() => setLightboxIndex(null)} />}
-      {waterfallOpen && <WaterfallView source={{ kind: 'library', title: '全屏浏览 · 图库', filters }} onClose={() => setWaterfallOpen(false)} onToast={props.onToast} />}
+      {waterfallOpen && <WaterfallView source={{ kind: 'library', title: '全屏浏览 · 图库', filters }} onClose={() => setWaterfallOpen(false)} onToast={props.onToast} onAlbumsChanged={props.onAlbumsChanged} />}
       {contextMenu && <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)} items={[
         { label: '查看大图', hint: '空格', onClick: () => openLightbox(contextMenu.asset) },
         { label: contextMenu.asset.favorite ? '取消收藏' : '加入收藏', onClick: () => void toggleFavorite(contextMenu.asset) },
@@ -624,7 +629,7 @@ function AlbumsPage(props: { albums: Album[]; selectedAlbumId: string | null; on
     if (!window.confirm(`删除相册“${album.name}”？作品和相册关系会一起删除，磁盘原图不受影响。`)) return
     try { await window.albumApi.albums.remove(album.id); await props.onRefreshAlbums(); props.onToast({ kind: 'info', text: '相册已删除' }) } catch (error) { props.onToast({ kind: 'error', text: errorMessage(error) }) }
   }
-  if (selected) return <AlbumDetail album={selected} onBack={() => props.onSelectAlbum(null)} onRefreshAlbums={props.onRefreshAlbums} templates={props.templates} onOpenWork={props.onOpenWork} onToast={props.onToast} settings={props.settings} onSettingsChange={props.onSettingsChange} />
+  if (selected) return <AlbumDetail album={selected} onBack={() => props.onSelectAlbum(null)} onRefreshAlbums={props.onRefreshAlbums} templates={props.templates} onOpenWork={props.onOpenWork} onToast={props.onToast} settings={props.settings} onSettingsChange={props.onSettingsChange} onAlbumsChanged={props.onRefreshAlbums} />
   return <section className="page"><header className="page-header"><div><p className="eyebrow">ALBUMS</p><h1>相册</h1><p className="subtle">同一张照片可放入多个相册，不会产生额外副本。</p></div><button className="button primary" onClick={() => void props.onCreateAlbum()}>＋ 新建相册</button></header>{props.albums.length === 0 ? <EmptyState title="还没有相册" text="创建相册后，可以从图库批量选图加入。" action="新建相册" onAction={() => void props.onCreateAlbum()} /> : <div className="album-grid">{props.albums.map((album) => <button className="album-card" key={album.id} onClick={() => props.onSelectAlbum(album.id)} onContextMenu={(event) => { event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY, album }) }}>{album.coverAssetId ? <img src={thumbnailUrl(album.coverAssetId, 640)} alt={album.name} /> : <div className="album-placeholder">▤</div>}<span><strong>{album.name}</strong><small>{formatDate(new Date(album.updatedAt).toISOString())} 更新</small></span></button>)}</div>}{contextMenu && <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)} items={[{ label: '打开相册', onClick: () => props.onSelectAlbum(contextMenu.album.id) }, { label: '删除相册', separator: true, danger: true, onClick: () => void removeAlbum(contextMenu.album) }]} />}</section>
 }
 
@@ -637,6 +642,7 @@ function AlbumDetail(props: {
   onToast: (toast: { kind: 'info' | 'error'; text: string }) => void
   settings: AppSettings
   onSettingsChange: (patch: Partial<AppSettings>, persist?: 'now' | 'debounce') => void
+  onAlbumsChanged: () => Promise<void>
 }) {
   const [assets, setAssets] = useState<MediaAssetSummary[]>([])
   const [works, setWorks] = useState<Work[]>([])
@@ -759,6 +765,7 @@ function AlbumDetail(props: {
               onActivate={activate}
               onOpen={openLightbox}
               onContextMenu={(event, asset) => setContextMenu({ x: event.clientX, y: event.clientY, asset })}
+              remeasureKey={`${inspectorOpen}|${inspectorWidth}|${props.settings.thumbnailSize}|${props.settings.uiScale}`}
             />}
           <section className="section-block">
             <div className="section-heading"><h2>作品版本</h2></div>
@@ -783,7 +790,7 @@ function AlbumDetail(props: {
 
       {pickerOpen && <AssetPicker title="选择照片加入相册" thumbnailSize={props.settings.thumbnailSize} onClose={() => setPickerOpen(false)} onConfirm={async (ids) => { try { await window.albumApi.albums.addAssets(props.album.id, ids); setPickerOpen(false); await load() } catch (error) { props.onToast({ kind: 'error', text: errorMessage(error) }) } }} />}
       {lightboxIndex != null && assets[lightboxIndex] && <Lightbox assets={assets} index={lightboxIndex} onChangeIndex={setLightboxIndex} onClose={() => setLightboxIndex(null)} />}
-      {waterfallOpen && <WaterfallView source={{ kind: 'assets', title: `全屏浏览 · ${props.album.name}`, assets }} onClose={() => setWaterfallOpen(false)} onToast={props.onToast} />}
+      {waterfallOpen && <WaterfallView source={{ kind: 'assets', title: `全屏浏览 · ${props.album.name}`, assets }} onClose={() => setWaterfallOpen(false)} onToast={props.onToast} onAlbumsChanged={props.onAlbumsChanged} />}
       {contextMenu && <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)} items={[
         { label: '查看大图', hint: '空格', onClick: () => openLightbox(contextMenu.asset) },
         { label: contextMenu.asset.id === coverAssetId ? '当前已是封面' : '设为相册封面', disabled: contextMenu.asset.id === coverAssetId, onClick: () => void setCover(contextMenu.asset.id) },

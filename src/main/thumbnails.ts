@@ -90,11 +90,13 @@ export class ThumbnailService {
 
   private async renderToCache(sourcePath: string, cachePath: string, safeSize: number, quality: number): Promise<string> {
     const temporaryPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`
+    // 大图只求快，缩略图才值得多花点编码时间换体积。
+    const effort = safeSize >= 1280 ? 2 : 4
     try {
       await sharp(sourcePath, { failOn: 'none' })
         .rotate()
         .resize({ width: safeSize, height: safeSize, fit: 'inside', withoutEnlargement: true })
-        .webp({ quality, effort: 4 })
+        .webp({ quality, effort })
         .toFile(temporaryPath)
       await rename(temporaryPath, cachePath)
       return cachePath
