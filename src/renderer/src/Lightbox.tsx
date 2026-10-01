@@ -58,7 +58,7 @@ export default function Lightbox(props: LightboxProps) {
         ? <div className="lightbox-missing">原图不可用</div>
         : <>
           {/* 先用已经缓存的缩略图顶上，大图加载好再淡入，避免点开时白屏等待。 */}
-          <img className="lightbox-thumb" src={thumbnailUrl(asset.id, 960)} alt="" aria-hidden="true" />
+          <img className={`lightbox-thumb ${loadedId === asset.id ? 'hidden' : ''}`} src={thumbnailUrl(asset.id, 960)} alt="" aria-hidden="true" />
           <img
             className={`lightbox-image ${loadedId === asset.id ? 'loaded' : ''}`}
             src={previewUrl(asset.id, 1600)}

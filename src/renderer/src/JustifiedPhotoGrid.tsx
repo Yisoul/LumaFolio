@@ -17,11 +17,26 @@ export interface JustifiedPhotoGridProps {
   onHover?: (asset: MediaAssetSummary | null) => void
   /** 任何会影响可用宽度的变化（面板开关、栏宽、界面缩放）都要重新量一次。 */
   remeasureKey?: string
+  /** Ctrl/⌘ + 滚轮调整缩略图大小；手势期间只做 transform 预览，松手才真正重排。 */
+  onSizeChange?: (size: number) => void
+  minSize?: number
+  maxSize?: number
 }
 
 export default function JustifiedPhotoGrid(props: JustifiedPhotoGridProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const gridRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(0)
+  const zoomRef = useRef({ scale: 1, frame: 0, idle: 0 })
+  const minSize = props.minSize ?? 120
+  const maxSize = props.maxSize ?? 520
+  // 手势期间父组件可能重渲染，这里用 ref 存最新值，监听只挂一次，避免提交被清理掉。
+  const sizeChangeRef = useRef(props.onSizeChange)
+  const targetHeightRef = useRef(props.targetHeight)
+  sizeChangeRef.current = props.onSizeChange
+  targetHeightRef.current = props.targetHeight
+  const boundsRef = useRef({ min: minSize, max: maxSize })
+  boundsRef.current = { min: minSize, max: maxSize }
 
   useEffect(() => {
     const node = containerRef.current
@@ -53,8 +68,52 @@ export default function JustifiedPhotoGrid(props: JustifiedPhotoGridProps) {
     { containerWidth: containerWidth || 960, targetHeight: props.targetHeight, gap: 6 }
   ), [containerWidth, props.photos, props.targetHeight])
 
+  useEffect(() => {
+    const node = gridRef.current
+    if (!node) return
+
+    const paint = () => {
+      zoomRef.current.frame = 0
+      const { scale } = zoomRef.current
+      node.style.transformOrigin = 'top left'
+      node.style.transform = scale === 1 ? '' : `scale(${scale})`
+    }
+    const commit = () => {
+      zoomRef.current.idle = 0
+      const { scale } = zoomRef.current
+      zoomRef.current.scale = 1
+      node.style.transform = ''
+      if (Math.abs(scale - 1) < 0.001) return
+      const { min, max } = boundsRef.current
+      sizeChangeRef.current?.(Math.max(min, Math.min(max, Math.round(targetHeightRef.current * scale))))
+    }
+    const onWheel = (event: WheelEvent) => {
+      if (!sizeChangeRef.current) return
+      if (!event.ctrlKey && !event.metaKey) return
+      event.preventDefault()
+      const factor = event.deltaY > 0 ? 0.92 : 1.08
+      zoomRef.current.scale = Math.max(0.4, Math.min(2.5, zoomRef.current.scale * factor))
+      if (!zoomRef.current.frame) zoomRef.current.frame = window.requestAnimationFrame(paint)
+      if (zoomRef.current.idle) window.clearTimeout(zoomRef.current.idle)
+      zoomRef.current.idle = window.setTimeout(commit, 140)
+    }
+
+    // 挂在滚动容器上，鼠标落在图片区任何位置（包括行末空白）都能缩放。
+    const target = node.parentElement ?? node
+    target.addEventListener('wheel', onWheel, { passive: false })
+    return () => {
+      target.removeEventListener('wheel', onWheel)
+      if (zoomRef.current.frame) window.cancelAnimationFrame(zoomRef.current.frame)
+      if (zoomRef.current.idle) window.clearTimeout(zoomRef.current.idle)
+      zoomRef.current.frame = 0
+      zoomRef.current.idle = 0
+      zoomRef.current.scale = 1
+      node.style.transform = ''
+    }
+  }, [])
+
   return (
-    <div className="justified-grid" ref={containerRef}>
+    <div className="justified-grid" ref={(node) => { containerRef.current = node; gridRef.current = node }}>
       {layout.rows.map((row, rowIndex) => (
         <div className="justified-row" key={rowIndex}>
           {row.items.map((item) => {

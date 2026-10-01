@@ -330,10 +330,19 @@ describe('App shell', () => {
     const api = stubApi('dark', [libraryAsset(1)], [{ id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }])
     const { container } = render(<App />)
 
-    await waitFor(() => expect(container.querySelector('.browse-scroll')).not.toBeNull())
-    fireEvent.wheel(container.querySelector('.browse-scroll')!, { ctrlKey: true, deltaY: -100 })
+    await waitFor(() => expect(container.querySelectorAll('.tile').length).toBeGreaterThan(0))
+    // jsdom 的 WheelEvent 不一定带 ctrlKey，这里手动构造一个带修饰键的滚轮事件。
+    const wheelEvent = new Event('wheel', { bubbles: true, cancelable: true })
+    Object.assign(wheelEvent, { ctrlKey: true, deltaY: -100, deltaMode: 0 })
+    container.querySelector('.justified-grid')!.dispatchEvent(wheelEvent)
 
-    await waitFor(() => expect(api.app.saveSettings).toHaveBeenLastCalledWith(expect.objectContaining({ thumbnailSize: 220 })))
+    // 手势期间只做 transform 预览，停下 140ms 后才提交新的缩略图尺寸。
+    await waitFor(() => {
+      const calls = api.app.saveSettings.mock.calls
+      const last = calls[calls.length - 1]?.[0] as { thumbnailSize?: number } | undefined
+      expect(last?.thumbnailSize).toBeGreaterThan(200)
+      expect(last?.thumbnailSize).toBeLessThanOrEqual(520)
+    })
   })
 
   it('collapses and restores the left navigation', async () => {

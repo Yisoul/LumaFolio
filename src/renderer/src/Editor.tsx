@@ -3,6 +3,7 @@ import type Konva from 'konva'
 import { Group as KonvaGroup, Image as KonvaImage, Layer as KonvaLayer, Line, Rect, Stage, Text as KonvaText, Transformer } from 'react-konva'
 import type { CustomFont, ExportOptions, ExportResult, Layer, LayerOrderAction, MediaAssetSummary, TemplateDefinition, Work, WorkDocument } from '../../shared/types'
 import ContextMenu from './ContextMenu'
+import { confirmDialog } from './ConfirmDialog'
 import TextInputDialog from './TextInputDialog'
 import { useShortcut } from './shortcuts'
 import { errorMessage, previewUrl, thumbnailUrl } from './helpers'
@@ -167,7 +168,9 @@ export default function Editor(props: EditorProps) {
   }
 
   const deletePage = async () => {
-    if (!document || !activePage || document.pages.length <= 1 || !window.confirm('删除当前页面？')) return
+    if (!document || !activePage || document.pages.length <= 1) return
+    const ok = await confirmDialog({ title: '删除页面', message: '这一页上的图层会一起删除，磁盘原图不受影响。', confirmLabel: '确认删除', danger: true })
+    if (!ok) return
     try {
       await window.albumApi.works.deletePage(activePage.id)
       const remaining = document.pages.filter((page) => page.id !== activePage.id)
@@ -179,7 +182,8 @@ export default function Editor(props: EditorProps) {
 
   const deleteLayers = async (layerIds = selectedLayerIds) => {
     if (!document || !activePage || layerIds.length === 0) return
-    if (!window.confirm(`删除选中的 ${layerIds.length} 个图层？`)) return
+    const ok = await confirmDialog({ title: '删除图层', message: `删除选中的 ${layerIds.length} 个图层？`, confirmLabel: '确认删除', danger: true })
+    if (!ok) return
     try {
       for (const layerId of layerIds) await window.albumApi.works.deleteLayer(layerId)
       setDocument({ ...document, pages: document.pages.map((page) => page.id === activePage.id ? { ...page, layers: page.layers.filter((layer) => !layerIds.includes(layer.id)) } : page) })
@@ -518,7 +522,6 @@ function LayerInspector(props: { work: Work; layer: Layer; customFonts: CustomFo
       <section className="inspector-section">
         <div className="section-title"><h4>大小与旋转</h4><small>可直接拖控制点</small></div>
         <div className="inspector-grid">{numeric('宽', 'width')}{numeric('高', 'height')}{numeric('旋转', 'rotation')}</div>
-        <p>选中后拖动四角或边缘控制点，可自由改变宽高和比例。</p>
       </section>
       <section className="inspector-section">
         <h4>图层顺序</h4>
@@ -535,21 +538,19 @@ function LayerInspector(props: { work: Work; layer: Layer; customFonts: CustomFo
         <div className="field-group full-field"><span>字体</span><div className="font-row"><select value={stringStyle(style.fontFamily, 'Microsoft YaHei')} onChange={(event) => props.onUpdateText(text, { fontFamily: event.target.value })}><option value="Microsoft YaHei">微软雅黑</option><option value="SimSun">宋体</option><option value="SimHei">黑体</option><option value="KaiTi">楷体</option><option value="FangSong">仿宋</option><option value="Arial">Arial</option><option value="Georgia">Georgia</option>{props.customFonts.length > 0 && <optgroup label="导入字体">{props.customFonts.map((font) => <option key={font.id} value={font.family}>{font.name}</option>)}</optgroup>}</select><button type="button" className="button secondary compact" onClick={props.onImportFont}>导入字体</button></div></div>
         <div className="inspector-grid"><label>对齐<select value={stringStyle(style.align, 'left')} onChange={(event) => props.onUpdateText(text, { align: event.target.value })}><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></label><label>字重<select value={stringStyle(style.fontWeight, 'normal')} onChange={(event) => props.onUpdateText(text, { fontWeight: event.target.value })}><option value="normal">常规</option><option value="bold">加粗</option></select></label></div>
         <div className="inspector-grid"><label>行距<input type="number" min="0.8" max="3" step="0.1" value={numberStyle(style.lineHeight, 1.2)} onChange={(event) => props.onUpdateText(text, { lineHeight: Number(event.target.value) })} /></label><label>字距<input type="number" step="0.5" value={numberStyle(style.letterSpacing)} onChange={(event) => props.onUpdateText(text, { letterSpacing: Number(event.target.value) })} /></label></div>
-        <p>双击画布上的文字可直接就地编辑；支持 {'{{album}}'}、{'{{camera}}'}、{'{{lens}}'}、{'{{date}}'} 等变量。</p>
       </section> : <section className="inspector-section">
         <div className="section-title"><h4>图片</h4><small>{props.asset ? `${props.asset.width} × ${props.asset.height}` : '缺失图片'}</small></div>
         <button className="button secondary full" onClick={props.onReplace}>更换图片</button>
         <label>显示方式<select value={stringStyle(style.fit, 'contain')} onChange={(event) => props.onUpdate({ style: { ...style, fit: event.target.value } })}><option value="contain">完整显示（保持比例）</option><option value="cover">裁剪填满</option><option value="stretch">拉伸填满（可变形）</option></select></label>
         <label>圆角<div className="range-control"><input type="range" min="0" max="200" step="1" value={Math.min(200, numberStyle(style.radius))} onChange={(event) => props.onUpdate({ style: { ...style, radius: Number(event.target.value) } })} /><div><input type="number" min="0" step="1" value={numberStyle(style.radius)} onChange={(event) => props.onUpdate({ style: { ...style, radius: Math.max(0, Number(event.target.value)) } })} /><em>px</em></div></div></label>
         <button className={`button secondary full ${ratioFeedback ? 'success' : ''}`} disabled={!props.asset} onClick={restoreImageAspect}>{ratioFeedback ? '✓ 已按原图比例调整' : '按原图比例调整高度'}</button>
-        <p>拖动四角可自由拉伸；需要不变形时选择“完整显示”，需要裁切时选择“裁剪填满”。</p>
       </section>}
     </div>
   )
 }
 
 function MultiSelectionPanel(props: { count: number; onReorder: (action: LayerOrderAction) => void; onDelete: () => void; onClear: () => void }) {
-  return <div className="inspector multi-inspector"><div className="inspector-head"><div><span>多选模式</span><strong>已选 {props.count} 个图层</strong></div></div><section className="inspector-section"><p>可同时拖动控制框、缩放或旋转。按 Ctrl 点击继续增减图层，点击画布空白处取消选择。</p><div className="reorder-grid"><button onClick={() => props.onReorder('top')}>置顶</button><button onClick={() => props.onReorder('up')}>上移</button><button onClick={() => props.onReorder('down')}>下移</button><button onClick={() => props.onReorder('bottom')}>置底</button></div><div className="button-row"><button className="button secondary" onClick={props.onClear}>取消选择</button><button className="button danger-solid" onClick={props.onDelete}>删除所选</button></div></section></div>
+  return <div className="inspector multi-inspector"><div className="inspector-head"><div><span>多选模式</span><strong>已选 {props.count} 个图层</strong></div></div><section className="inspector-section"><div className="reorder-grid"><button onClick={() => props.onReorder('top')}>置顶</button><button onClick={() => props.onReorder('up')}>上移</button><button onClick={() => props.onReorder('down')}>下移</button><button onClick={() => props.onReorder('bottom')}>置底</button></div><div className="button-row"><button className="button secondary" onClick={props.onClear}>取消选择</button><button className="button danger-solid" onClick={props.onDelete}>删除所选</button></div></section></div>
 }
 
 function InspectorEmpty(props: { onAddText: () => void; onAddImage: () => void }) {

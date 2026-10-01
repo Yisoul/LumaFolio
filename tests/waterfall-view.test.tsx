@@ -44,7 +44,7 @@ function asset(index: number, overrides: Partial<MediaAssetSummary> = {}): Media
   }
 }
 
-function createApiMock(assets: MediaAssetSummary[]) {
+function createApiMock(assets: MediaAssetSummary[], existingAlbums: Array<{ id: string; name: string; updatedAt: number }> = []) {
   const albums = new Map<string, Set<string>>()
   const api = {
     app: {
@@ -57,6 +57,8 @@ function createApiMock(assets: MediaAssetSummary[]) {
       }))
     },
     albums: {
+      list: vi.fn(async () => existingAlbums.map((album) => ({ ...album, coverAssetId: null, createdAt: album.updatedAt }))),
+      listAssets: vi.fn(async () => []),
       create: vi.fn(async (name: string) => {
         const id = `album-${albums.size + 1}`
         albums.set(id, new Set())
@@ -215,5 +217,48 @@ describe('WaterfallView', () => {
 
     unmount()
     expect(api.app.setFullscreen).toHaveBeenLastCalledWith(false)
+  })
+
+  it('offers to continue the previous temp album and reuses it by default', async () => {
+    const previous = { id: 'album-old', name: '临时选片 10-01 10:00', updatedAt: 500 }
+    const { api } = createApiMock([asset(1)], [previous])
+
+    const { container } = render(<WaterfallView source={{ kind: 'library', title: '图库', filters: { sort: 'captured_desc' } }} onClose={() => undefined} onToast={() => undefined} />)
+
+    await waitFor(() => expect(container.querySelector('.waterfall-hintbar')).not.toBeNull())
+    // 不点提示条直接按 T，默认继续往上次的临时相册里加。
+    fireEvent.keyDown(window, { key: 't' })
+
+    await waitFor(() => expect(api.albums.addAssets).toHaveBeenCalledWith('album-old', ['asset-1']))
+    expect(api.albums.create).not.toHaveBeenCalled()
+  })
+
+  it('creates a fresh temp album when asked to start a new one', async () => {
+    const previous = { id: 'album-old', name: '临时选片 10-01 10:00', updatedAt: 500 }
+    const { api } = createApiMock([asset(1)], [previous])
+
+    const { container } = render(<WaterfallView source={{ kind: 'library', title: '图库', filters: { sort: 'captured_desc' } }} onClose={() => undefined} onToast={() => undefined} />)
+
+    await waitFor(() => expect(container.querySelector('.waterfall-hintbar')).not.toBeNull())
+    fireEvent.click(screen.getByRole('button', { name: '新建一个' }))
+    fireEvent.keyDown(window, { key: 't' })
+
+    await waitFor(() => expect(api.albums.create).toHaveBeenCalledTimes(1))
+    expect(api.albums.addAssets).toHaveBeenCalledWith('album-1', ['asset-1'])
+  })
+
+  it('hides the blurred placeholder once the big preview is loaded', async () => {
+    createApiMock([asset(1)])
+
+    const { container } = render(<WaterfallView source={{ kind: 'library', title: '图库', filters: { sort: 'captured_desc' } }} onClose={() => undefined} onToast={() => undefined} />)
+
+    await waitFor(() => expect(container.querySelectorAll('.waterfall-item')).toHaveLength(1))
+    fireEvent.doubleClick(container.querySelectorAll('.waterfall-item')[0])
+
+    const thumb = container.querySelector('.lightbox-thumb')!
+    expect(thumb.classList.contains('hidden')).toBe(false)
+
+    fireEvent.load(container.querySelector('.lightbox-image')!)
+    expect(thumb.classList.contains('hidden')).toBe(true)
   })
 })

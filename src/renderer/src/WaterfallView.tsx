@@ -1,7 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { MediaAssetSummary, SearchFilters } from '../../shared/types'
+import type { Album, MediaAssetSummary, SearchFilters } from '../../shared/types'
 import Lightbox from './Lightbox'
+import { IconClose } from './icons'
 import { useShortcut } from './shortcuts'
+import { TEMP_ALBUM_PREFIX, pickLatestTempAlbum } from './temp-album'
 import {
   RATING_FILTER_OPTIONS, errorMessage, formatCamera, ratingFilterPatch, ratingStars, thumbnailUrl
 } from './helpers'
@@ -50,6 +52,11 @@ export default function WaterfallView(props: WaterfallViewProps) {
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [marked, setMarked] = useState<Set<string>>(() => new Set())
   const [tempAlbumName, setTempAlbumName] = useState<string | null>(null)
+  /** 本次会话的标记目标：null 表示还没决定（默认接着上次），'new' 表示新建。 */
+  const [markTarget, setMarkTarget] = useState<Album | 'new' | null>(null)
+  const [historyTempAlbum, setHistoryTempAlbum] = useState<Album | null>(null)
+  const [historyCount, setHistoryCount] = useState(0)
+  const [hintHidden, setHintHidden] = useState(false)
   const [columnWidth, setColumnWidth] = useState(240)
   const [ratingFilter, setRatingFilter] = useState('')
   const [markFilter, setMarkFilter] = useState<MarkFilter>('all')
@@ -140,11 +147,35 @@ export default function WaterfallView(props: WaterfallViewProps) {
     return () => { void window.albumApi.app.setFullscreen(false).catch(() => undefined) }
   }, [])
 
+  // 找一下上次的临时相册，有的话在顶部提示可以接着用。
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const albums = await window.albumApi.albums.list()
+        const latest = pickLatestTempAlbum(albums)
+        if (!latest || cancelled) return
+        const assets = await window.albumApi.albums.listAssets(latest.id)
+        if (cancelled) return
+        setHistoryTempAlbum(latest)
+        setHistoryCount(assets.length)
+      } catch {
+        // 拿不到就当作没有历史临时相册，行为保持原样。
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
   const ensureTempAlbum = useCallback(async (): Promise<{ id: string; name: string }> => {
-    if (tempAlbumRef.current) {
-      return { id: tempAlbumRef.current, name: tempAlbumName ?? '临时选片' }
+    if (tempAlbumRef.current) return { id: tempAlbumRef.current, name: tempAlbumName ?? '临时选片' }
+    // 会话内没指定时默认接着上次的临时相册用。
+    if (markTarget !== 'new' && historyTempAlbum) {
+      tempAlbumRef.current = historyTempAlbum.id
+      setTempAlbumName(historyTempAlbum.name)
+      setMarkTarget(historyTempAlbum)
+      return { id: historyTempAlbum.id, name: historyTempAlbum.name }
     }
-    const base = `临时选片 ${tempAlbumNameStamp(new Date())}`
+    const base = `${TEMP_ALBUM_PREFIX}${tempAlbumNameStamp(new Date())}`
     let lastError: unknown = new Error('创建临时相册失败')
     for (let attempt = 0; attempt < 5; attempt += 1) {
       try {
@@ -158,7 +189,7 @@ export default function WaterfallView(props: WaterfallViewProps) {
       }
     }
     throw lastError
-  }, [tempAlbumName])
+  }, [historyTempAlbum, markTarget, tempAlbumName])
 
   const toggleMark = useCallback(async (asset: MediaAssetSummary | null) => {
     if (!asset || pendingMarkId) return
@@ -175,7 +206,14 @@ export default function WaterfallView(props: WaterfallViewProps) {
       const album = await ensureTempAlbum()
       if (wasMarked) await window.albumApi.albums.removeAsset(album.id, asset.id)
       else await window.albumApi.albums.addAssets(album.id, [asset.id])
-      if (created && !wasMarked) props.onToast({ kind: 'info', text: `已创建临时相册「${album.name}」` })
+      if (!wasMarked) {
+        props.onToast({
+          kind: 'info',
+          text: created
+            ? `已创建临时相册「${album.name}」`
+            : `继续往「${album.name}」里加`
+        })
+      }
     } catch (error) {
       setMarked((current) => {
         const next = new Set(current)
@@ -187,7 +225,7 @@ export default function WaterfallView(props: WaterfallViewProps) {
     } finally {
       setPendingMarkId(null)
     }
-  }, [ensureTempAlbum, marked, pendingMarkId, props])
+  }, [ensureTempAlbum, markTarget, marked, pendingMarkId, props])
 
   const step = useCallback((delta: number) => {
     if (visible.length === 0) return
@@ -228,6 +266,18 @@ export default function WaterfallView(props: WaterfallViewProps) {
           <button className="button primary compact" onClick={props.onClose}>退出（Esc）</button>
         </div>
       </header>
+
+      {historyTempAlbum && markTarget === null && !hintHidden && (
+        <div className="waterfall-hintbar">
+          <span>上次的临时相册<b>「{historyTempAlbum.name}」</b>里有 {historyCount} 张，这次要接着往里加吗？</span>
+          <button type="button" className="button secondary compact" onClick={() => {
+            setMarkTarget(historyTempAlbum)
+            props.onToast({ kind: 'info', text: `继续往「${historyTempAlbum.name}」里加` })
+          }}>继续往里加</button>
+          <button type="button" className="button secondary compact" onClick={() => setMarkTarget('new')}>新建一个</button>
+          <button type="button" className="icon-button" title="忽略" aria-label="忽略" onClick={() => setHintHidden(true)}><IconClose size={14} /></button>
+        </div>
+      )}
 
       <div className="waterfall-body" ref={bodyRef}>
         {loading && assets.length === 0

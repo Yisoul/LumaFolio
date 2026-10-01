@@ -6,6 +6,7 @@ import type {
   TemplateDefinition, Work
 } from '../../shared/types'
 import ContextMenu from './ContextMenu'
+import { confirmDialog } from './ConfirmDialog'
 import Editor from './Editor'
 import FilterChips from './FilterChips'
 import FolderTree from './FolderTree'
@@ -20,7 +21,6 @@ import WaterfallView from './WaterfallView'
 import { RATING_FILTER_OPTIONS, errorMessage, formatCamera, formatDate, previewUrl, ratingFilterPatch, ratingFilterValue, ratingStars, thumbnailUrl } from './helpers'
 import { IconAlbums, IconChevronLeft, IconDuplicates, IconExpand, IconLibrary, IconPanelLeft, IconPanelRight, IconPlus, IconRefresh, IconSearch, IconSettings, IconTrash } from './icons'
 import { useShortcut } from './shortcuts'
-import { useThumbWheel } from './useThumbWheel'
 
 type NavKey = 'library' | 'duplicates' | 'albums' | 'settings'
 
@@ -370,7 +370,13 @@ function LibraryPage(props: {
     } catch (error) { props.onToast({ kind: 'error', text: errorMessage(error) }) }
   }
   const removeFromLibrary = async (asset: MediaAssetSummary) => {
-    if (!window.confirm('从图库移除这张照片？相册和作品中的引用会保留，磁盘原图不会删除。')) return
+    const ok = await confirmDialog({
+      title: '从图库移除照片',
+      message: '相册和作品中的引用会保留，磁盘原图不会删除。',
+      confirmLabel: '从图库移除',
+      danger: true
+    })
+    if (!ok) return
     try {
       await window.albumApi.library.ignoreAsset(asset.id)
       setPhotos((current) => current.filter((item) => item.id !== asset.id))
@@ -420,7 +426,6 @@ function LibraryPage(props: {
     inspectorOpen ? '4px' : null,
     inspectorOpen ? `${inspectorWidth}px` : null
   ].filter(Boolean).join(' ')
-  useThumbWheel(scrollRef, props.settings.thumbnailSize, 120, 360, (value) => props.onSettingsChange({ thumbnailSize: value }, 'debounce'))
 
   return (
     <section className="browse-page" style={{ gridTemplateColumns }}>
@@ -492,6 +497,7 @@ function LibraryPage(props: {
                   onContextMenu={(event, photo) => setContextMenu({ x: event.clientX, y: event.clientY, asset: photo })}
                   onHover={(photo) => setHoveredFolder(treeOpen ? photo?.primaryDirectoryPath ?? null : null)}
                   remeasureKey={`${treeOpen}|${inspectorOpen}|${treeWidth}|${inspectorWidth}|${props.settings.thumbnailSize}|${props.settings.uiScale}`}
+                  onSizeChange={(value) => props.onSettingsChange({ thumbnailSize: value }, 'debounce')}
                 />}
           {photos.length > 0 && <div className="load-more" ref={sentinelRef}>{hasMore ? <button className="button secondary" disabled={loadingMore} onClick={() => setPage((current) => current + 1)}>{loadingMore ? '正在加载…' : '加载更多'}</button> : <span>已显示全部 {total.toLocaleString()} 张</span>}</div>}
         </div>
@@ -626,7 +632,13 @@ function AlbumsPage(props: { albums: Album[]; selectedAlbumId: string | null; on
   const selected = props.albums.find((album) => album.id === props.selectedAlbumId)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; album: Album } | null>(null)
   const removeAlbum = async (album: Album) => {
-    if (!window.confirm(`删除相册“${album.name}”？作品和相册关系会一起删除，磁盘原图不受影响。`)) return
+    const ok = await confirmDialog({
+      title: '删除相册',
+      message: `删除「${album.name}」？作品和相册关系会一起删除，磁盘原图不受影响。`,
+      confirmLabel: '确认删除',
+      danger: true
+    })
+    if (!ok) return
     try { await window.albumApi.albums.remove(album.id); await props.onRefreshAlbums(); props.onToast({ kind: 'info', text: '相册已删除' }) } catch (error) { props.onToast({ kind: 'error', text: errorMessage(error) }) }
   }
   if (selected) return <AlbumDetail album={selected} onBack={() => props.onSelectAlbum(null)} onRefreshAlbums={props.onRefreshAlbums} templates={props.templates} onOpenWork={props.onOpenWork} onToast={props.onToast} settings={props.settings} onSettingsChange={props.onSettingsChange} onAlbumsChanged={props.onRefreshAlbums} />
@@ -688,14 +700,35 @@ function AlbumDetail(props: {
       props.onToast({ kind: 'info', text: '相册封面已更新' })
     } catch (error) { props.onToast({ kind: 'error', text: errorMessage(error) }) }
   }
-  const removeAlbum = async () => { if (!window.confirm(`删除相册“${props.album.name}”？作品和相册关系会一起删除，磁盘原图不受影响。`)) return; try { await window.albumApi.albums.remove(props.album.id); await props.onRefreshAlbums(); props.onBack() } catch (error) { props.onToast({ kind: 'error', text: errorMessage(error) }) } }
+  const removeAlbum = async () => {
+    const ok = await confirmDialog({
+      title: '删除相册',
+      message: `删除「${props.album.name}」？作品和相册关系会一起删除，磁盘原图不受影响。`,
+      confirmLabel: '确认删除',
+      danger: true
+    })
+    if (!ok) return
+    try { await window.albumApi.albums.remove(props.album.id); await props.onRefreshAlbums(); props.onBack() } catch (error) { props.onToast({ kind: 'error', text: errorMessage(error) }) }
+  }
   const removeSelected = async () => { if (!selected.size) return; try { for (const assetId of selected) await window.albumApi.albums.removeAsset(props.album.id, assetId); setSelected(new Set()); await load() } catch (error) { props.onToast({ kind: 'error', text: errorMessage(error) }) } }
   const removeAsset = async (asset: MediaAssetSummary) => {
-    if (!window.confirm('从相册移除这张照片？磁盘原图不会删除。')) return
+    const ok = await confirmDialog({
+      title: '从相册移除照片',
+      message: '只解除这张照片与相册的关系，磁盘原图不会删除。',
+      confirmLabel: '从相册移除',
+      danger: true
+    })
+    if (!ok) return
     try { await window.albumApi.albums.removeAsset(props.album.id, asset.id); await load(); await props.onRefreshAlbums() } catch (error) { props.onToast({ kind: 'error', text: errorMessage(error) }) }
   }
   const removeWork = async (work: Work) => {
-    if (!window.confirm(`删除作品“${work.name}”？作品排版会删除，磁盘原图不受影响。`)) return
+    const ok = await confirmDialog({
+      title: '删除作品',
+      message: `删除「${work.name}」？作品排版会删除，磁盘原图不受影响。`,
+      confirmLabel: '确认删除',
+      danger: true
+    })
+    if (!ok) return
     try { await window.albumApi.works.remove(work.id); await load() } catch (error) { props.onToast({ kind: 'error', text: errorMessage(error) }) }
   }
 
@@ -726,7 +759,6 @@ function AlbumDetail(props: {
   const inspectorWidth = props.settings.inspectorWidth ?? 320
   const albumColumns = ['minmax(0, 1fr)', inspectorOpen ? '4px' : null, inspectorOpen ? `${inspectorWidth}px` : null].filter(Boolean).join(' ')
   const scrollRef = useRef<HTMLDivElement>(null)
-  useThumbWheel(scrollRef, props.settings.thumbnailSize, 120, 360, (value) => props.onSettingsChange({ thumbnailSize: value }, 'debounce'))
 
   return (
     <section className="browse-page album-browse" style={{ gridTemplateColumns: albumColumns }}>
@@ -766,6 +798,7 @@ function AlbumDetail(props: {
               onOpen={openLightbox}
               onContextMenu={(event, asset) => setContextMenu({ x: event.clientX, y: event.clientY, asset })}
               remeasureKey={`${inspectorOpen}|${inspectorWidth}|${props.settings.thumbnailSize}|${props.settings.uiScale}`}
+              onSizeChange={(value) => props.onSettingsChange({ thumbnailSize: value }, 'debounce')}
             />}
           <section className="section-block">
             <div className="section-heading"><h2>作品版本</h2></div>

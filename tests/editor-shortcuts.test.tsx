@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 import React from 'react'
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WorkDocument } from '../src/shared/types'
+import { ConfirmHost } from '../src/renderer/src/ConfirmDialog'
 import { ShortcutProvider } from '../src/renderer/src/shortcuts'
 
 // jsdom 没有 canvas，Konva 图层用空组件替身，测试只关心快捷键逻辑。
@@ -54,19 +55,19 @@ function stubApi() {
 
 async function renderEditor() {
   const api = stubApi()
-  const { container } = render(<ShortcutProvider><Editor workId="work-1" onBack={async () => undefined} onToast={() => undefined} /></ShortcutProvider>)
+  const { container } = render(
+    <ShortcutProvider>
+      <Editor workId="work-1" onBack={async () => undefined} onToast={() => undefined} />
+      <ConfirmHost />
+    </ShortcutProvider>
+  )
   await waitFor(() => expect(container.querySelector('.editor-shell')).not.toBeNull())
   fireEvent.click(container.querySelector('.layer-select')!)
   return { api, container }
 }
 
-beforeEach(() => {
-  vi.spyOn(window, 'confirm').mockReturnValue(true)
-})
-
 afterEach(() => {
   cleanup()
-  vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 
@@ -76,16 +77,17 @@ describe('editor shortcuts', () => {
 
     fireEvent.keyDown(window, { key: 'Delete' })
 
+    fireEvent.click(await screen.findByRole('button', { name: '确认删除' }))
     await waitFor(() => expect(api.works.deleteLayer).toHaveBeenCalledWith('layer-1'))
     await waitFor(() => expect(container.querySelectorAll('.layer-row')).toHaveLength(0))
   })
 
   it('keeps the layer when the confirmation is declined', async () => {
     const { api, container } = await renderEditor()
-    vi.mocked(window.confirm).mockReturnValue(false)
 
     fireEvent.keyDown(window, { key: 'Backspace' })
 
+    fireEvent.click(await screen.findByRole('button', { name: '取消' }))
     expect(api.works.deleteLayer).not.toHaveBeenCalled()
     expect(container.querySelectorAll('.layer-row')).toHaveLength(1)
   })

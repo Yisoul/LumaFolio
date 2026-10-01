@@ -68,7 +68,7 @@ export default function PhotoInspector(props: PhotoInspectorProps) {
             {asset.missing || previewFailed
               ? <div className="inspector-preview-missing">原图不可用</div>
               : <>
-                <img className="inspector-preview-thumb" src={thumbnailUrl(asset.id, 640)} alt="" aria-hidden="true" />
+                <img className={`inspector-preview-thumb ${previewLoaded ? 'hidden' : ''}`} src={thumbnailUrl(asset.id, 640)} alt="" aria-hidden="true" />
                 <img
                   className={`inspector-preview-full ${previewLoaded ? 'loaded' : ''}`}
                   src={previewUrl(asset.id, 1600)}
