@@ -1,10 +1,10 @@
 {
-  "name": "album-studio",
+  "name": "luma-folio",
   "version": "0.2.0",
   "private": true,
-  "description": "本地摄影相册与社交作品排版工具",
+  "description": "LumaFolio 光影册 · 把散落的照片，整理成作品。",
   "main": "./out/main/index.js",
-  "author": "Album Studio",
+  "author": "LumaFolio",
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
@@ -44,8 +44,8 @@
     "vitest": "^3.2.4"
   },
   "build": {
-    "appId": "com.albumstudio.desktop",
-    "productName": "相册工作台",
+    "appId": "com.lumafolio.desktop",
+    "productName": "LumaFolio",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -64,7 +64,7 @@
           ]
         }
       ],
-      "artifactName": "Album-Studio-${version}-Setup.${ext}",
+      "artifactName": "LumaFolio-${version}-Setup.${ext}",
       "signAndEditExecutable": false
     },
     "nsis": {

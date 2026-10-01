@@ -12,7 +12,7 @@ describe('LibraryScanner', () => {
   let scanner: LibraryScanner
 
   beforeEach(async () => {
-    rootDir = await mkdtemp(join(tmpdir(), 'album-studio-'))
+    rootDir = await mkdtemp(join(tmpdir(), 'luma-folio-'))
     db = new AppDatabase(':memory:')
     db.migrate()
     scanner = new LibraryScanner(db)

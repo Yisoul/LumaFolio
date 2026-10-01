@@ -99,7 +99,7 @@ describe('App shell', () => {
     stubApi('light')
     const { container } = render(<App />)
 
-    expect(screen.getByText('相册工作台')).toBeTruthy()
+    expect(screen.getByText('光影册')).toBeTruthy()
     expect(container.querySelector('.sidebar')).not.toBeNull()
     expect(container.querySelector('.nav-button.active')?.textContent).toContain('图库')
 

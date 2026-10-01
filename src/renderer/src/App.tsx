@@ -136,7 +136,7 @@ export default function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand"><div><strong>相册工作台</strong><span>本地摄影作品库</span></div></div>
+        <div className="brand"><div><strong>光影册</strong><span>LumaFolio</span></div></div>
         <nav className="nav-list">
           <NavButton icon="▦" label="图库" active={nav === 'library'} onClick={() => setNav('library')} />
           <NavButton icon="⧉" label="重复项" count={stats.duplicateGroups} active={nav === 'duplicates'} onClick={() => setNav('duplicates')} />
@@ -727,7 +727,7 @@ function RemoveRootDialog(props: { root: SourceRoot; impact: SourceRootImpact | 
           <p className="source-path">{props.root.path}</p>
           <div className="removal-impact">{props.impact ? `当前目录关联 ${props.impact.assetCount.toLocaleString()} 张照片、${props.impact.locationCount.toLocaleString()} 个文件位置` : '正在统计影响范围…'}</div>
           <div className="removal-options">{options.map((option) => <label className={mode === option.value ? 'active' : ''} key={option.value}><input type="radio" name="source-removal" value={option.value} checked={mode === option.value} onChange={() => setMode(option.value)} /><span><strong>{option.title}</strong><small>{option.text}</small></span></label>)}</div>
-          <p className="danger-note">这里只修改相册工作台的数据，不会删除、移动或重命名磁盘原图。</p>
+          <p className="danger-note">这里只修改光影册的数据，不会删除、移动或重命名磁盘原图。</p>
           <div className="dialog-actions"><button className="button secondary" disabled={busy} onClick={props.onClose}>取消</button><button className={`button ${mode === 'all' ? 'danger-solid' : 'primary'}`} disabled={busy || !props.impact} onClick={() => void submit()}>{busy ? '处理中…' : '确认'}</button></div>
         </div>
       </div>

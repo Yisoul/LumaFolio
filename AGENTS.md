@@ -2,7 +2,7 @@
 
 ## 项目
 
-Windows 本地摄影图库与排版工具。原图不搬迁，相册和作品只保存引用。
+光影册 LumaFolio（仓库 luma-folio），Windows 本地摄影图库与排版工具。原图不搬迁，相册和作品只保存引用。
 
 技术栈：Electron、React、TypeScript、electron-vite、SQLite、Konva、sharp、
 exifr、chokidar、fontkit，测试使用 Vitest。

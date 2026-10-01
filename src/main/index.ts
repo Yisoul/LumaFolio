@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Menu, net, protocol } from 'electron'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { LEGACY_APP_FOLDER, migrateLegacyAppData } from './app-data'
 import { BackupService } from './backup'
 import { AppDatabase } from './database'
 import { WorkExporter } from './exporter'
@@ -20,6 +21,18 @@ let database: AppDatabase | null = null
 let scanner: LibraryScanner | null = null
 let removeIpcHandlers: (() => void) | null = null
 
+function migrateLegacyAppDataSafe(): void {
+  try {
+    const migrated = migrateLegacyAppData(
+      join(app.getPath('appData'), LEGACY_APP_FOLDER),
+      app.getPath('userData')
+    )
+    if (migrated) console.log('已把旧版相册工作台的数据库、设置和字体迁移到新目录')
+  } catch (error) {
+    console.error('迁移旧版应用数据失败，将从新目录重新建立索引', error)
+  }
+}
+
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1500,
@@ -28,7 +41,7 @@ function createWindow(): BrowserWindow {
     minHeight: 720,
     show: false,
     backgroundColor: '#f6f4ef',
-    title: '相册工作台',
+    title: '光影册 LumaFolio',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -37,7 +50,7 @@ function createWindow(): BrowserWindow {
     }
   })
 
-  const headless = process.env.ALBUM_STUDIO_HEADLESS === '1'
+  const headless = process.env.LUMA_FOLIO_HEADLESS === '1' || process.env.ALBUM_STUDIO_HEADLESS === '1'
   window.once('ready-to-show', () => { if (!headless) window.show() })
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = null
@@ -52,6 +65,7 @@ function createWindow(): BrowserWindow {
 }
 
 async function initialize(): Promise<void> {
+  migrateLegacyAppDataSafe()
   const userData = app.getPath('userData')
   const databasePath = join(userData, 'library.sqlite')
   const thumbnailDirectory = join(userData, 'thumbnails')
@@ -126,7 +140,7 @@ async function initialize(): Promise<void> {
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null)
-  app.setAppUserModelId('com.albumstudio.desktop')
+  app.setAppUserModelId('com.lumafolio.desktop')
   await initialize()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()

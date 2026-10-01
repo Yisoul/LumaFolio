@@ -34,7 +34,7 @@ describe('library star rating', () => {
   let baseJpeg: Buffer
 
   beforeEach(async () => {
-    rootDir = await mkdtemp(join(tmpdir(), 'album-studio-rating-'))
+    rootDir = await mkdtemp(join(tmpdir(), 'luma-folio-rating-'))
     db = new AppDatabase(':memory:')
     db.migrate()
     scanner = new LibraryScanner(db)
