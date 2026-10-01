@@ -20,6 +20,7 @@ import WaterfallView from './WaterfallView'
 import { RATING_FILTER_OPTIONS, errorMessage, formatCamera, formatDate, previewUrl, ratingFilterPatch, ratingFilterValue, ratingStars, thumbnailUrl } from './helpers'
 import { IconAlbums, IconChevronLeft, IconDuplicates, IconExpand, IconLibrary, IconPanelLeft, IconPanelRight, IconPlus, IconRefresh, IconSearch, IconSettings, IconTrash } from './icons'
 import { useShortcut } from './shortcuts'
+import { useThumbWheel } from './useThumbWheel'
 
 type NavKey = 'library' | 'duplicates' | 'albums' | 'settings'
 
@@ -43,6 +44,7 @@ export default function App() {
   const saveTimerRef = useRef<number | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
   const [searchFocusRequest, setSearchFocusRequest] = useState(false)
+  const [navCollapsed, setNavCollapsed] = useState(false)
 
   const refreshStats = useCallback(async () => setStats(await window.albumApi.app.getStats()), [])
   const refreshRoots = useCallback(async () => setRoots(await window.albumApi.library.listRoots()), [])
@@ -192,9 +194,10 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${navCollapsed ? 'nav-collapsed' : ''}`}>
+      {navCollapsed && <button type="button" className="nav-rail-toggle icon-button" title="显示导航栏" onClick={() => setNavCollapsed(false)}><IconPanelRight size={16} /></button>}
       <aside className="sidebar">
-        <div className="brand"><div><strong>光影册</strong><span>LumaFolio</span></div></div>
+        <div className="brand"><div><strong>光影册</strong><span>LumaFolio</span></div><button type="button" className="icon-button" title="隐藏导航栏" onClick={() => setNavCollapsed(true)}><IconPanelLeft size={16} /></button></div>
         <nav className="nav-list">
           <NavButton icon={<IconLibrary size={16} />} label="图库" active={nav === 'library'} onClick={() => setNav('library')} />
           <NavButton icon={<IconDuplicates size={16} />} label="重复项" count={stats.duplicateGroups} active={nav === 'duplicates'} onClick={() => setNav('duplicates')} />
@@ -259,6 +262,7 @@ function LibraryPage(props: {
   const requestIdRef = useRef(0)
   const sentinelRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   // 空格全屏查看当前照片；Esc 先关浮层、再取消选择。
   useShortcut({
@@ -402,6 +406,7 @@ function LibraryPage(props: {
     inspectorOpen ? '4px' : null,
     inspectorOpen ? `${inspectorWidth}px` : null
   ].filter(Boolean).join(' ')
+  useThumbWheel(scrollRef, props.settings.thumbnailSize, 120, 360, (value) => props.onSettingsChange({ thumbnailSize: value }, 'debounce'))
 
   return (
     <section className="browse-page" style={{ gridTemplateColumns }}>
@@ -425,7 +430,7 @@ function LibraryPage(props: {
             />
           </div>
         </aside>
-        <Splitter onResize={(delta) => props.onSettingsChange({ treeWidth: treeWidth + delta }, 'debounce')} />
+        <Splitter width={treeWidth} min={160} max={420} onResize={(value) => props.onSettingsChange({ treeWidth: value }, 'debounce')} />
       </>}
 
       <div className="browse-main">
@@ -456,7 +461,7 @@ function LibraryPage(props: {
           </div>
         </div>
 
-        <div className="browse-scroll">
+        <div className="browse-scroll" ref={scrollRef}>
           {props.roots.every((root) => !root.enabled)
             ? <EmptyState title="还没有启用的照片来源" text="添加一个包含 JPG 或 PNG 的文件夹，或重新启用已停用的目录。" action="选择照片文件夹" onAction={() => void props.onAddRoots()} />
             : loading && photos.length === 0
@@ -478,7 +483,7 @@ function LibraryPage(props: {
       </div>
 
       {inspectorOpen && <>
-        <Splitter onResize={(delta) => props.onSettingsChange({ inspectorWidth: inspectorWidth - delta }, 'debounce')} />
+        <Splitter width={inspectorWidth} min={240} max={520} invert onResize={(value) => props.onSettingsChange({ inspectorWidth: value }, 'debounce')} />
         <PhotoInspector
           asset={activePhoto}
           albums={props.albums}
@@ -703,6 +708,8 @@ function AlbumDetail(props: {
   const allSelected = assets.length > 0 && selected.size === assets.length
   const inspectorWidth = props.settings.inspectorWidth ?? 320
   const albumColumns = ['minmax(0, 1fr)', inspectorOpen ? '4px' : null, inspectorOpen ? `${inspectorWidth}px` : null].filter(Boolean).join(' ')
+  const scrollRef = useRef<HTMLDivElement>(null)
+  useThumbWheel(scrollRef, props.settings.thumbnailSize, 120, 360, (value) => props.onSettingsChange({ thumbnailSize: value }, 'debounce'))
 
   return (
     <section className="browse-page album-browse" style={{ gridTemplateColumns: albumColumns }}>
@@ -730,7 +737,7 @@ function AlbumDetail(props: {
           </div>
         </div>
 
-        <div className="browse-scroll">
+        <div className="browse-scroll" ref={scrollRef}>
           {assets.length === 0
             ? <EmptyState title="相册还是空的" text="从图库选择照片加入，不会复制原文件。" action="选择照片" onAction={() => setPickerOpen(true)} />
             : <JustifiedPhotoGrid
@@ -750,7 +757,7 @@ function AlbumDetail(props: {
       </div>
 
       {inspectorOpen && <>
-        <Splitter onResize={(delta) => props.onSettingsChange({ inspectorWidth: inspectorWidth - delta }, 'debounce')} />
+        <Splitter width={inspectorWidth} min={240} max={520} invert onResize={(value) => props.onSettingsChange({ inspectorWidth: value }, 'debounce')} />
         <PhotoInspector
           asset={activePhoto}
           albums={[]}

@@ -1,17 +1,29 @@
 import { useRef } from 'react'
 
-/** 竖向分隔条：按住拖动时把横向位移回调出去，由父组件决定改哪一栏宽度。 */
-export default function Splitter({ onResize }: { onResize: (deltaX: number) => void }) {
-  const lastRef = useRef(0)
+interface SplitterProps {
+  /** 该栏当前宽度，拖动期间以按下瞬间的值为基准计算，避免受重渲染影响。 */
+  width: number
+  min: number
+  max: number
+  /** 分隔条在目标栏右侧时（例如右侧信息栏）传 true，拖动方向要反过来。 */
+  invert?: boolean
+  onResize: (width: number) => void
+}
+
+export default function Splitter({ width, min, max, invert = false, onResize }: SplitterProps) {
+  const stateRef = useRef({ startX: 0, startWidth: width, dragging: false })
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault()
-    lastRef.current = event.clientX
+    stateRef.current = { startX: event.clientX, startWidth: width, dragging: true }
     const move = (moveEvent: PointerEvent) => {
-      onResize(moveEvent.clientX - lastRef.current)
-      lastRef.current = moveEvent.clientX
+      if (!stateRef.current.dragging) return
+      const delta = moveEvent.clientX - stateRef.current.startX
+      const next = stateRef.current.startWidth + (invert ? -delta : delta)
+      onResize(Math.max(min, Math.min(max, Math.round(next))))
     }
     const up = () => {
+      stateRef.current.dragging = false
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
     }

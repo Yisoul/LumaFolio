@@ -299,6 +299,44 @@ describe('App shell', () => {
     await waitFor(() => expect(container.querySelectorAll('.tree-row.selected')).toHaveLength(1))
   })
 
+  it('resizes the folder column by dragging the splitter', async () => {
+    const api = stubApi('dark', [libraryAsset(1)], [{ id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }], [
+      { path: 'C:\\photos\\a', name: 'a', assetCount: 2 }
+    ])
+    const { container } = render(<App />)
+
+    await waitFor(() => expect(container.querySelector('.splitter')).not.toBeNull())
+    fireEvent.pointerDown(container.querySelector('.splitter')!, { clientX: 220 })
+    fireEvent.pointerMove(window, { clientX: 300 })
+    fireEvent.pointerUp(window)
+
+    await waitFor(() => expect(api.app.saveSettings).toHaveBeenLastCalledWith(expect.objectContaining({ treeWidth: 300 })))
+  })
+
+  it('resizes thumbnails with ctrl + wheel over the grid', async () => {
+    const api = stubApi('dark', [libraryAsset(1)], [{ id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }])
+    const { container } = render(<App />)
+
+    await waitFor(() => expect(container.querySelector('.browse-scroll')).not.toBeNull())
+    fireEvent.wheel(container.querySelector('.browse-scroll')!, { ctrlKey: true, deltaY: -100 })
+
+    await waitFor(() => expect(api.app.saveSettings).toHaveBeenLastCalledWith(expect.objectContaining({ thumbnailSize: 220 })))
+  })
+
+  it('collapses and restores the left navigation', async () => {
+    stubApi('dark')
+    const { container } = render(<App />)
+
+    await waitFor(() => expect(screen.getByTitle('隐藏导航栏')).toBeTruthy())
+    fireEvent.click(screen.getByTitle('隐藏导航栏'))
+
+    await waitFor(() => expect(container.querySelector('.app-shell')?.classList.contains('nav-collapsed')).toBe(true))
+    expect(screen.getByTitle('显示导航栏')).toBeTruthy()
+
+    fireEvent.click(screen.getByTitle('显示导航栏'))
+    await waitFor(() => expect(container.querySelector('.app-shell')?.classList.contains('nav-collapsed')).toBe(false))
+  })
+
   it('keeps captions out of the row height so tiles cannot overlap', async () => {
     stubApi('dark', [libraryAsset(1), libraryAsset(2)], [{ id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }])
     const { container } = render(<App />)

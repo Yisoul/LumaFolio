@@ -75,8 +75,11 @@ button { cursor: pointer; }
 img { display: block; max-width: 100%; }
 
 .app-shell { display: grid; grid-template-columns: 208px 1fr; height: 100%; background: var(--page-bg); }
+.app-shell.nav-collapsed { grid-template-columns: 0 minmax(0, 1fr); }
+.app-shell.nav-collapsed .sidebar { display: none; }
+.nav-rail-toggle { position: fixed; top: 10px; left: 10px; z-index: 40; border-color: var(--line); background: var(--paper); box-shadow: var(--shadow); }
 .sidebar { display: flex; flex-direction: column; padding: 18px 12px 14px; border-right: 1px solid var(--line); color: var(--sidebar-text); background: var(--sidebar-bg); }
-.brand { display: flex; align-items: center; padding: 4px 8px 20px; }
+.brand { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 4px 20px 8px; }
 .brand strong, .brand span { display: block; }
 .brand strong { font-size: 14px; font-weight: 600; letter-spacing: .01em; }
 .brand span { margin-top: 3px; color: var(--sidebar-muted); font-size: 11px; }
