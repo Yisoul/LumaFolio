@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MediaAssetSummary, SearchFilters } from '../../shared/types'
 import Lightbox from './Lightbox'
+import { useShortcut } from './shortcuts'
 import {
   RATING_FILTER_OPTIONS, errorMessage, formatCamera, ratingFilterPatch, ratingStars, thumbnailUrl
 } from './helpers'
@@ -180,22 +181,12 @@ export default function WaterfallView(props: WaterfallViewProps) {
     setSelectedId(visible[nextIndex].id)
   }, [selectedId, visible])
 
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      const target = event.target
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return
-      // 灯箱打开时由 Lightbox 自己接管键盘，避免同一次按键被处理两次。
-      if (lightboxOpen) return
-      const key = event.key
-      if (key === 'Escape') { event.preventDefault(); props.onClose(); return }
-      if (key === 'ArrowRight' || key === 'ArrowDown') { event.preventDefault(); step(1); return }
-      if (key === 'ArrowLeft' || key === 'ArrowUp') { event.preventDefault(); step(-1); return }
-      if (key === 'Enter' || key === ' ') { event.preventDefault(); if (selected) setLightboxOpen(true); return }
-      if (key === 't' || key === 'T') { event.preventDefault(); void toggleMark(selected); return }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [lightboxOpen, props, selected, step, toggleMark])
+  // 灯箱打开时作用域优先级更高，这里的命令不会被触发，不需要额外互斥判断。
+  useShortcut({ id: 'waterfall.close', keys: ['escape'], scope: 'waterfall', label: '退出全屏浏览', run: props.onClose })
+  useShortcut({ id: 'waterfall.next', keys: ['arrowright', 'arrowdown'], scope: 'waterfall', label: '下一张', run: () => step(1) })
+  useShortcut({ id: 'waterfall.previous', keys: ['arrowleft', 'arrowup'], scope: 'waterfall', label: '上一张', run: () => step(-1) })
+  useShortcut({ id: 'waterfall.open', keys: ['enter', 'space'], scope: 'waterfall', label: '打开大图', when: () => Boolean(selected), run: () => setLightboxOpen(true) })
+  useShortcut({ id: 'waterfall.mark', keys: ['t'], scope: 'waterfall', label: '加入 / 移出临时相册', when: () => Boolean(selected), run: () => void toggleMark(selected) })
 
   return (
     <div className="waterfall-shell">

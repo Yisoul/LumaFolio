@@ -421,11 +421,21 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
   .filter-bar { flex-wrap: wrap; }
 }
 .context-menu { position: fixed; z-index: 500; display: grid; width: 212px; max-height: min(70vh, 520px); overflow: auto; padding: 5px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-strong); box-shadow: var(--shadow); }
-.context-menu button { padding: 8px 10px; border: 0; border-radius: 5px; color: var(--ink); background: transparent; text-align: left; font-size: 12px; }
+.context-menu button { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border: 0; border-radius: 5px; color: var(--ink); background: transparent; text-align: left; font-size: 12px; }
 .context-menu button:hover:not(:disabled) { color: var(--accent); background: var(--soft-accent); }
+.context-menu button.active:not(:disabled) { color: var(--accent); background: var(--soft-accent); }
 .context-menu button.danger { color: var(--danger); }
 .context-menu button:disabled { color: var(--muted); cursor: default; }
+.context-menu-hint { color: var(--muted); font-family: var(--font-mono); font-size: 10px; font-style: normal; }
 .context-menu-separator { height: 1px; margin: 4px 3px; background: var(--line); }
+
+/* ---------- 快捷键面板 ---------- */
+.shortcut-modal { width: min(680px, 100%); }
+.shortcut-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px 26px; }
+.shortcut-group h3 { margin: 0 0 7px; color: var(--accent); font-size: 11px; font-weight: 600; letter-spacing: .04em; }
+.shortcut-list { display: grid; }
+.shortcut-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 6px 0; border-bottom: 1px solid var(--line-soft); font-size: 12px; }
+.shortcut-row kbd { flex: 0 0 auto; padding: 2px 7px; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); background: var(--paper); font-family: var(--font-mono); font-size: 10px; white-space: nowrap; }
 
 /* ---------- 全屏瀑布流选片 ---------- */
 .waterfall-shell { position: fixed; inset: 0; z-index: 60; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; color: #ececed; background: #121214; }

@@ -8,9 +8,11 @@ import type {
 import ContextMenu from './ContextMenu'
 import Editor from './Editor'
 import Lightbox from './Lightbox'
+import ShortcutHelp from './ShortcutHelp'
 import TextInputDialog from './TextInputDialog'
 import WaterfallView from './WaterfallView'
 import { RATING_FILTER_OPTIONS, errorMessage, formatCamera, formatDate, previewUrl, ratingFilterPatch, ratingFilterValue, ratingStars, thumbnailUrl } from './helpers'
+import { useShortcut } from './shortcuts'
 
 type NavKey = 'library' | 'duplicates' | 'albums' | 'settings'
 
@@ -27,6 +29,8 @@ export default function App() {
   const [toast, setToast] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
   const [albumDialogOpen, setAlbumDialogOpen] = useState(false)
   const [theme, setTheme] = useState<AppTheme>('dark')
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [searchFocusRequest, setSearchFocusRequest] = useState(false)
 
   const refreshStats = useCallback(async () => setStats(await window.albumApi.app.getStats()), [])
   const refreshRoots = useCallback(async () => setRoots(await window.albumApi.library.listRoots()), [])
@@ -101,11 +105,30 @@ export default function App() {
     setNav('albums')
   }
 
+  const goTo = (key: NavKey): void => {
+    setEditingWorkId(null)
+    setNav(key)
+  }
+
+  useShortcut({ id: 'global.library', keys: ['ctrl+1'], scope: 'global', label: '切换到图库', run: () => goTo('library') })
+  useShortcut({ id: 'global.duplicates', keys: ['ctrl+2'], scope: 'global', label: '切换到重复项', run: () => goTo('duplicates') })
+  useShortcut({ id: 'global.albums', keys: ['ctrl+3'], scope: 'global', label: '切换到相册', run: () => goTo('albums') })
+  useShortcut({ id: 'global.settings', keys: ['ctrl+4'], scope: 'global', label: '切换到设置', run: () => goTo('settings') })
+  useShortcut({
+    id: 'global.search',
+    keys: ['/', 'ctrl+f'],
+    scope: 'global',
+    label: '聚焦搜索框',
+    run: () => { goTo('library'); setSearchFocusRequest(true) }
+  })
+  useShortcut({ id: 'global.help', keys: ['?', 'ctrl+/'], scope: 'global', label: '快捷键帮助', when: () => !helpOpen, run: () => setHelpOpen(true) })
+
   if (editingWorkId) {
     return (
       <>
         <Editor workId={editingWorkId} onBack={async () => { setEditingWorkId(null); await refreshStats() }} onToast={setToast} />
         {toast && <Toast toast={toast} onClose={() => setToast(null)} />}
+        {helpOpen && <ShortcutHelp onClose={() => setHelpOpen(false)} />}
       </>
     )
   }
@@ -130,13 +153,14 @@ export default function App() {
             <span>{scanProgress.processed} / {scanProgress.discovered}</span>
           </div>
         )}
-        {nav === 'library' && <LibraryPage roots={roots} albums={albums} onAddRoots={addRoots} onScanAll={scanAll} onRefreshStats={refreshStats} onToast={setToast} />}
+        {nav === 'library' && <LibraryPage roots={roots} albums={albums} onAddRoots={addRoots} onScanAll={scanAll} onRefreshStats={refreshStats} onToast={setToast} focusSearch={searchFocusRequest} onSearchFocused={() => setSearchFocusRequest(false)} />}
         {nav === 'duplicates' && <DuplicatesPage onToast={setToast} onRefresh={refreshStats} />}
         {nav === 'albums' && <AlbumsPage albums={albums} selectedAlbumId={selectedAlbumId} onSelectAlbum={setSelectedAlbumId} onRefreshAlbums={refreshAlbums} templates={templates} onOpenWork={setEditingWorkId} onToast={setToast} onCreateAlbum={() => setAlbumDialogOpen(true)} />}
         {nav === 'settings' && <SettingsPage roots={roots} onAddRoots={addRoots} onRemoveRoot={removeRoot} onSetRootEnabled={setRootEnabled} onScanAll={scanAll} onRefreshStats={refreshStats} onToast={setToast} />}
       </main>
       {toast && <Toast toast={toast} onClose={() => setToast(null)} />}
       {albumDialogOpen && <TextInputDialog title="新建相册" label="相册名称" confirmLabel="创建相册" onClose={() => setAlbumDialogOpen(false)} onConfirm={createAlbum} />}
+      {helpOpen && <ShortcutHelp onClose={() => setHelpOpen(false)} />}
     </div>
   )
 }
@@ -145,7 +169,7 @@ function NavButton(props: { icon: string; label: string; count?: number; active:
   return <button className={`nav-button ${props.active ? 'active' : ''}`} onClick={props.onClick}><span className="nav-icon">{props.icon}</span><span>{props.label}</span>{props.count != null && props.count > 0 && <b>{props.count}</b>}</button>
 }
 
-function LibraryPage(props: { roots: SourceRoot[]; albums: Album[]; onAddRoots: () => Promise<void>; onScanAll: () => Promise<void>; onRefreshStats: () => Promise<void>; onToast: (toast: { kind: 'info' | 'error'; text: string }) => void }) {
+function LibraryPage(props: { roots: SourceRoot[]; albums: Album[]; onAddRoots: () => Promise<void>; onScanAll: () => Promise<void>; onRefreshStats: () => Promise<void>; onToast: (toast: { kind: 'info' | 'error'; text: string }) => void; focusSearch: boolean; onSearchFocused: () => void }) {
   const pageSize = 120
   const [filters, setFilters] = useState<Omit<SearchFilters, 'limit' | 'offset'>>({ sort: 'captured_desc' })
   const [page, setPage] = useState(0)
@@ -163,35 +187,32 @@ function LibraryPage(props: { roots: SourceRoot[]; albums: Album[]; onAddRoots: 
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const requestIdRef = useRef(0)
   const sentinelRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if (event.key !== 'f' && event.key !== 'F') return
-      if (event.ctrlKey || event.metaKey || event.altKey || waterfallOpen) return
-      const target = event.target
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return
-      event.preventDefault()
-      setWaterfallOpen(true)
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [waterfallOpen])
-
-  // 空格全屏查看当前选中的照片（全局快捷键，图库和相册里都生效）。
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if (event.key !== ' ') return
-      if (waterfallOpen || detail || contextMenu || lightboxIndex != null) return
-      const target = event.target
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return
+  // 空格全屏查看当前照片；Esc 先关浮层、再取消选择。
+  useShortcut({
+    id: 'library.lightbox',
+    keys: ['space'],
+    scope: 'library',
+    label: '全屏查看选中的照片',
+    when: () => !waterfallOpen && !detail && !contextMenu && lightboxIndex == null,
+    run: () => {
       const index = photos.findIndex((photo) => photo.id === activeId)
-      if (index < 0) return
-      event.preventDefault()
-      setLightboxIndex(index)
+      if (index >= 0) setLightboxIndex(index)
     }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [activeId, contextMenu, detail, lightboxIndex, photos, waterfallOpen])
+  })
+  useShortcut({ id: 'library.fullscreen', keys: ['f'], scope: 'library', label: '全屏浏览', when: () => !waterfallOpen, run: () => setWaterfallOpen(true) })
+  useShortcut({ id: 'library.select-all', keys: ['ctrl+a'], scope: 'library', label: '全选已加载照片', skipInInput: true, when: () => photos.length > 0, run: () => setSelected(new Set(photos.map((photo) => photo.id))) })
+  useShortcut({ id: 'library.clear-selection', keys: ['escape'], scope: 'library', label: '取消选择', when: () => selected.size > 0, run: () => setSelected(new Set()) })
+
+  useEffect(() => {
+    if (!props.focusSearch) return
+    const node = searchRef.current
+    if (!node) return
+    node.focus()
+    node.select()
+    props.onSearchFocused()
+  }, [props.focusSearch, props.onSearchFocused])
 
   useEffect(() => {
     const timer = setTimeout(async () => {
@@ -276,7 +297,7 @@ function LibraryPage(props: { roots: SourceRoot[]; albums: Album[]; onAddRoots: 
       {props.roots.every((root) => !root.enabled) ? <EmptyState title="还没有启用的照片来源" text="添加一个包含 JPG 或 PNG 的文件夹，或重新启用已停用的目录。" action="选择照片文件夹" onAction={() => void props.onAddRoots()} /> : (
         <>
           <div className="toolbar filter-bar">
-            <input className="search-input" placeholder="搜索文件名或文件夹路径" value={filters.text ?? ''} onChange={(event) => updateFilters({ text: event.target.value || undefined })} />
+            <input ref={searchRef} className="search-input" placeholder="搜索文件名或文件夹路径" value={filters.text ?? ''} onChange={(event) => updateFilters({ text: event.target.value || undefined })} />
             <select value={filters.orientation ?? ''} onChange={(event) => updateFilters({ orientation: (event.target.value || undefined) as SearchFilters['orientation'] })}><option value="">全部方向</option><option value="landscape">横图</option><option value="portrait">竖图</option><option value="square">方图</option></select>
             <input placeholder="相机品牌或型号" value={filters.cameraModel ?? ''} onChange={(event) => updateFilters({ cameraModel: event.target.value || undefined })} />
             <input placeholder="镜头型号" value={filters.lens ?? ''} onChange={(event) => updateFilters({ lens: event.target.value || undefined })} />
@@ -301,7 +322,7 @@ function LibraryPage(props: { roots: SourceRoot[]; albums: Album[]; onAddRoots: 
       {lightboxIndex != null && photos[lightboxIndex] && <Lightbox assets={photos} index={lightboxIndex} onChangeIndex={setLightboxIndex} onClose={() => setLightboxIndex(null)} />}
       {waterfallOpen && <WaterfallView source={{ kind: 'library', title: '全屏浏览 · 图库', filters }} onClose={() => setWaterfallOpen(false)} onToast={props.onToast} />}
       {contextMenu && <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)} items={[
-        { label: '查看大图', onClick: () => setDetail(contextMenu.asset) },
+        { label: '查看大图', hint: '空格', onClick: () => setDetail(contextMenu.asset) },
         { label: contextMenu.asset.favorite ? '取消收藏' : '加入收藏', onClick: () => void toggleFavorite(contextMenu.asset) },
         { label: '在文件夹中显示', disabled: contextMenu.asset.missing, onClick: () => void showAssetInFolder(contextMenu.asset) },
         ...props.albums.map((album) => ({ label: `加入相册：${album.name}`, onClick: () => void addAssetToAlbum(album, contextMenu.asset.id) })),
@@ -421,21 +442,15 @@ function PhotoDetail(props: { asset: MediaAssetSummary; assets: MediaAssetSummar
     document.addEventListener('fullscreenchange', update)
     return () => document.removeEventListener('fullscreenchange', update)
   }, [])
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return
-      if (event.key === 'Escape' && !document.fullscreenElement) { event.preventDefault(); props.onClose(); return }
-      const delta = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : 0
-      if (!delta || !multiple) return
-      const now = Date.now()
-      if (event.repeat && now - lastNavigationRef.current < 90) return
-      lastNavigationRef.current = now
-      event.preventDefault()
-      navigate(delta)
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [multiple, navigate])
+  const navigateRepeated = (delta: number, event: KeyboardEvent) => {
+    const now = Date.now()
+    if (event.repeat && now - lastNavigationRef.current < 90) return
+    lastNavigationRef.current = now
+    navigate(delta)
+  }
+  useShortcut({ id: 'photo.close', keys: ['escape'], scope: 'dialog', label: '关闭照片详情', when: () => !document.fullscreenElement, run: props.onClose })
+  useShortcut({ id: 'photo.next', keys: ['arrowright', 'arrowdown'], scope: 'dialog', label: '下一张', when: () => multiple, run: (event) => navigateRepeated(1, event) })
+  useShortcut({ id: 'photo.previous', keys: ['arrowleft', 'arrowup'], scope: 'dialog', label: '上一张', when: () => multiple, run: (event) => navigateRepeated(-1, event) })
   const toggleFullscreen = async () => {
     try {
       if (document.fullscreenElement) await document.exitFullscreen()
@@ -520,20 +535,20 @@ function AlbumDetail(props: { album: Album; onBack: () => void; onRefreshAlbums:
   const load = useCallback(async () => { const [nextAssets, nextWorks] = await Promise.all([window.albumApi.albums.listAssets(props.album.id), window.albumApi.works.list(props.album.id)]); setAssets(nextAssets); setWorks(nextWorks) }, [props.album.id])
   useEffect(() => { void load() }, [load])
   useEffect(() => setCoverAssetId(props.album.coverAssetId), [props.album.coverAssetId])
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if (event.key !== ' ') return
-      if (detail || waterfallOpen || contextMenu || lightboxIndex != null) return
-      const target = event.target
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return
+  useShortcut({
+    id: 'album.lightbox',
+    keys: ['space'],
+    scope: 'album',
+    label: '全屏查看选中的照片',
+    when: () => !detail && !waterfallOpen && !contextMenu && lightboxIndex == null,
+    run: () => {
       const index = assets.findIndex((asset) => asset.id === activeId)
-      if (index < 0) return
-      event.preventDefault()
-      setLightboxIndex(index)
+      if (index >= 0) setLightboxIndex(index)
     }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [activeId, assets, contextMenu, detail, lightboxIndex, waterfallOpen])
+  })
+  useShortcut({ id: 'album.fullscreen', keys: ['f'], scope: 'album', label: '全屏浏览相册', when: () => !waterfallOpen && assets.length > 0, run: () => setWaterfallOpen(true) })
+  useShortcut({ id: 'album.select-all', keys: ['ctrl+a'], scope: 'album', label: '全选相册照片', skipInInput: true, when: () => assets.length > 0, run: () => setSelected(new Set(assets.map((asset) => asset.id))) })
+  useShortcut({ id: 'album.clear-selection', keys: ['escape'], scope: 'album', label: '取消选择', when: () => selected.size > 0, run: () => setSelected(new Set()) })
   const setCover = async (assetId: string) => {
     try {
       await window.albumApi.albums.setCover(props.album.id, assetId)
@@ -562,7 +577,7 @@ function AlbumDetail(props: { album: Album; onBack: () => void; onRefreshAlbums:
       {lightboxIndex != null && assets[lightboxIndex] && <Lightbox assets={assets} index={lightboxIndex} onChangeIndex={setLightboxIndex} onClose={() => setLightboxIndex(null)} />}
       {waterfallOpen && <WaterfallView source={{ kind: 'assets', title: `全屏浏览 · ${props.album.name}`, assets }} onClose={() => setWaterfallOpen(false)} onToast={props.onToast} />}
       {contextMenu && <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)} items={[
-        { label: '查看大图', onClick: () => setDetail(contextMenu.asset) },
+        { label: '查看大图', hint: '空格', onClick: () => setDetail(contextMenu.asset) },
         { label: contextMenu.asset.id === coverAssetId ? '当前已是封面' : '设为相册封面', disabled: contextMenu.asset.id === coverAssetId, onClick: () => void setCover(contextMenu.asset.id) },
         { label: '从相册移除', separator: true, danger: true, onClick: () => void removeAsset(contextMenu.asset) }
       ]} />}

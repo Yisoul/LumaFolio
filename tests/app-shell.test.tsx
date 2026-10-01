@@ -3,7 +3,13 @@ import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { MediaAssetSummary } from '../src/shared/types'
-import App from '../src/renderer/src/App'
+import AppRaw from '../src/renderer/src/App'
+import { ShortcutProvider } from '../src/renderer/src/shortcuts'
+
+/** 应用依赖快捷键注册表，测试里统一套一层 Provider。 */
+function App() {
+  return <ShortcutProvider><AppRaw /></ShortcutProvider>
+}
 
 function libraryAsset(index: number): MediaAssetSummary {
   return {
@@ -127,5 +133,50 @@ describe('App shell', () => {
 
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(container.querySelector('.lightbox-image')).toBeNull()
+  })
+
+  it('switches pages with Ctrl+number and focuses the search box with /', async () => {
+    stubApi('dark', [libraryAsset(1)], [{ id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }])
+    render(<App />)
+    await waitFor(() => expect(screen.getByRole('heading', { name: '图库' })).toBeTruthy())
+
+    fireEvent.keyDown(window, { key: '4', ctrlKey: true })
+    await waitFor(() => expect(screen.getByText('照片来源目录')).toBeTruthy())
+
+    fireEvent.keyDown(window, { key: '/' })
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByPlaceholderText('搜索文件名或文件夹路径')))
+
+    // 普通切回图库不应该再自动聚焦搜索框。
+    fireEvent.keyDown(window, { key: '4', ctrlKey: true })
+    await waitFor(() => expect(screen.getByText('照片来源目录')).toBeTruthy())
+    fireEvent.keyDown(window, { key: '1', ctrlKey: true })
+    await waitFor(() => expect(screen.getByRole('heading', { name: '图库' })).toBeTruthy())
+    expect(document.activeElement).not.toBe(screen.getByPlaceholderText('搜索文件名或文件夹路径'))
+  })
+
+  it('opens the shortcut help with ? and closes it with Escape', async () => {
+    stubApi('dark')
+    render(<App />)
+    await waitFor(() => expect(screen.getByRole('heading', { name: '图库' })).toBeTruthy())
+
+    fireEvent.keyDown(window, { key: '?', shiftKey: true })
+    expect(await screen.findByRole('heading', { name: '快捷键' })).toBeTruthy()
+    expect(screen.getByText('切换到图库')).toBeTruthy()
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('heading', { name: '快捷键' })).toBeNull())
+  })
+
+  it('keeps Delete unbound in the library', async () => {
+    const api = stubApi('dark', [libraryAsset(1)], [{ id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }])
+    const { container } = render(<App />)
+
+    await waitFor(() => expect(container.querySelectorAll('.photo-card')).toHaveLength(1))
+    fireEvent.click(container.querySelector('.photo-card')!)
+    fireEvent.keyDown(window, { key: 'Delete' })
+
+    expect(api.library.ignoreAsset).not.toHaveBeenCalled()
+    expect(api.library.deleteOriginal).not.toHaveBeenCalled()
+    expect(container.querySelectorAll('.photo-card')).toHaveLength(1)
   })
 })

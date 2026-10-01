@@ -1,6 +1,6 @@
-import { useEffect } from 'react'
 import type { MediaAssetSummary } from '../../shared/types'
 import { formatCamera, formatDate, previewUrl, ratingStars } from './helpers'
+import { useShortcut } from './shortcuts'
 
 export interface LightboxProps {
   assets: MediaAssetSummary[]
@@ -23,24 +23,16 @@ export default function Lightbox(props: LightboxProps) {
     if (next !== props.index) props.onChangeIndex(next)
   }
 
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      const target = event.target
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return
-      if (event.key === 'Escape' || event.key === ' ') {
-        event.preventDefault()
-        props.onClose()
-        return
-      }
-      if (event.key === 'ArrowRight' || event.key === 'ArrowDown') { event.preventDefault(); step(1); return }
-      if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') { event.preventDefault(); step(-1); return }
-      if ((event.key === 't' || event.key === 'T') && asset && props.onToggleMark) {
-        event.preventDefault()
-        props.onToggleMark(asset)
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+  useShortcut({ id: 'lightbox.close', keys: ['escape', 'space'], scope: 'lightbox', label: '关闭大图', run: props.onClose })
+  useShortcut({ id: 'lightbox.next', keys: ['arrowright', 'arrowdown'], scope: 'lightbox', label: '下一张', run: () => step(1) })
+  useShortcut({ id: 'lightbox.previous', keys: ['arrowleft', 'arrowup'], scope: 'lightbox', label: '上一张', run: () => step(-1) })
+  useShortcut({
+    id: 'lightbox.mark',
+    keys: ['t'],
+    scope: 'lightbox',
+    label: '加入 / 移出临时相册',
+    when: () => Boolean(asset && props.onToggleMark),
+    run: () => { if (asset) props.onToggleMark?.(asset) }
   })
 
   if (!asset) return null

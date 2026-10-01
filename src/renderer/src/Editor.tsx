@@ -4,6 +4,7 @@ import { Group as KonvaGroup, Image as KonvaImage, Layer as KonvaLayer, Line, Re
 import type { CustomFont, ExportOptions, ExportResult, Layer, LayerOrderAction, MediaAssetSummary, TemplateDefinition, Work, WorkDocument } from '../../shared/types'
 import ContextMenu from './ContextMenu'
 import TextInputDialog from './TextInputDialog'
+import { useShortcut } from './shortcuts'
 import { errorMessage, previewUrl, thumbnailUrl } from './helpers'
 
 interface EditorProps {
@@ -49,11 +50,6 @@ export default function Editor(props: EditorProps) {
     void window.albumApi.albums.listAssets(document.work.albumId).then(setAlbumAssets)
   }, [document?.work.albumId])
   useEffect(() => { void loadCustomFonts().then(setCustomFonts).catch(() => undefined) }, [])
-  useEffect(() => {
-    const clearSelection = (event: KeyboardEvent) => { if (event.key === 'Escape') setSelectedLayerIds([]) }
-    window.addEventListener('keydown', clearSelection)
-    return () => window.removeEventListener('keydown', clearSelection)
-  }, [])
   const activePage = document?.pages.find((page) => page.id === activePageId) ?? null
   const selectedLayers = (activePage?.layers ?? []).filter((layer) => selectedLayerIds.includes(layer.id))
   const selectedLayer = selectedLayers.length === 1 ? selectedLayers[0] : null
@@ -207,6 +203,34 @@ export default function Editor(props: EditorProps) {
     props.onToast({ kind: 'info', text: '模板已保存' })
   }
 
+  useShortcut({ id: 'editor.deselect', keys: ['escape'], scope: 'editor', label: '取消选中图层', when: () => selectedLayerIds.length > 0, run: () => setSelectedLayerIds([]) })
+  useShortcut({ id: 'editor.delete', keys: ['delete', 'backspace'], scope: 'editor', label: '删除选中图层', when: () => selectedLayerIds.length > 0 && Boolean(activePage), run: () => void deleteLayers() })
+  useShortcut({
+    id: 'editor.nudge',
+    keys: ['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift+arrowup', 'shift+arrowdown', 'shift+arrowleft', 'shift+arrowright'],
+    scope: 'editor',
+    label: '微移选中图层（Shift 加大步长）',
+    when: () => selectedLayerIds.length > 0 && Boolean(activePage && document),
+    run: (event) => {
+      if (!activePage || !document) return
+      const stepPx = event.shiftKey ? 10 : 1
+      const dx = event.key === 'ArrowLeft' ? -stepPx : event.key === 'ArrowRight' ? stepPx : 0
+      const dy = event.key === 'ArrowUp' ? -stepPx : event.key === 'ArrowDown' ? stepPx : 0
+      if (!dx && !dy) return
+      for (const layerId of selectedLayerIds) {
+        const layer = activePage.layers.find((item) => item.id === layerId)
+        if (!layer) continue
+        void updateLayer(layerId, {
+          x: layer.x + dx / document.work.canvasWidth,
+          y: layer.y + dy / document.work.canvasHeight
+        })
+      }
+    }
+  })
+  useShortcut({ id: 'editor.zoom-in', keys: ['plus', 'equal'], scope: 'editor', label: '放大画布', run: () => setZoom((value) => Math.min(3, Math.round((value + 0.1) * 10) / 10)) })
+  useShortcut({ id: 'editor.zoom-out', keys: ['minus'], scope: 'editor', label: '缩小画布', run: () => setZoom((value) => Math.max(0.5, Math.round((value - 0.1) * 10) / 10)) })
+  useShortcut({ id: 'editor.zoom-fit', keys: ['0'], scope: 'editor', label: '适应窗口', run: () => setZoom(1) })
+
   if (loading || !document) return <div className="editor-loading">正在打开作品…</div>
 
   return (
@@ -219,7 +243,7 @@ export default function Editor(props: EditorProps) {
       </div>
       {pickerOpen && <ImagePicker title={replaceTargetId ? '更换图片' : '添加图片'} assets={albumAssets} onClose={() => { setPickerOpen(false); setReplaceTargetId(null) }} onSelect={(assetId) => void (replaceTargetId ? replaceImage(assetId) : addImage(assetId))} />}
       {exportOpen && <ExportDialog work={document} onClose={() => setExportOpen(false)} onToast={props.onToast} />}
-      {contextMenu && <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)} items={contextMenu.layerId ? (() => { const layer = activePage?.layers.find((item) => item.id === contextMenu.layerId); if (!layer) return []; return [ ...(layer.type === 'text' ? [{ label: '就地编辑文字', onClick: () => beginInlineTextEditing(layer.id) }] : [{ label: '更换图片', onClick: () => { setReplaceTargetId(layer.id); setPickerOpen(true) } }]), { label: '置顶', onClick: () => void reorderLayers([layer.id], 'top') }, { label: '上移', onClick: () => void reorderLayers([layer.id], 'up') }, { label: '下移', onClick: () => void reorderLayers([layer.id], 'down') }, { label: '置底', onClick: () => void reorderLayers([layer.id], 'bottom') }, { label: '删除图层', separator: true, danger: true, onClick: () => void deleteLayers([layer.id]) } ] })() : [{ label: '添加图片', onClick: () => { setReplaceTargetId(null); setPickerOpen(true) } }, { label: '添加文字', onClick: () => void addText() }]} />}
+      {contextMenu && <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)} items={contextMenu.layerId ? (() => { const layer = activePage?.layers.find((item) => item.id === contextMenu.layerId); if (!layer) return []; return [ ...(layer.type === 'text' ? [{ label: '就地编辑文字', onClick: () => beginInlineTextEditing(layer.id) }] : [{ label: '更换图片', onClick: () => { setReplaceTargetId(layer.id); setPickerOpen(true) } }]), { label: '置顶', onClick: () => void reorderLayers([layer.id], 'top') }, { label: '上移', onClick: () => void reorderLayers([layer.id], 'up') }, { label: '下移', onClick: () => void reorderLayers([layer.id], 'down') }, { label: '置底', onClick: () => void reorderLayers([layer.id], 'bottom') }, { label: '删除图层', hint: 'Delete', separator: true, danger: true, onClick: () => void deleteLayers([layer.id]) } ] })() : [{ label: '添加图片', onClick: () => { setReplaceTargetId(null); setPickerOpen(true) } }, { label: '添加文字', onClick: () => void addText() }]} />}
       {templateDialogOpen && <TextInputDialog title="保存自定义模板" label="模板名称" initialValue={`${document.work.name} 模板`} confirmLabel="保存模板" onClose={() => setTemplateDialogOpen(false)} onConfirm={saveTemplate} />}
     </div>
   )

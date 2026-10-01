@@ -3,7 +3,13 @@ import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MediaAssetSummary } from '../src/shared/types'
-import WaterfallView from '../src/renderer/src/WaterfallView'
+import WaterfallViewRaw from '../src/renderer/src/WaterfallView'
+import { ShortcutProvider } from '../src/renderer/src/shortcuts'
+
+/** 组件依赖快捷键注册表，测试里统一套一层 Provider。 */
+function WaterfallView(props: React.ComponentProps<typeof WaterfallViewRaw>) {
+  return <ShortcutProvider><WaterfallViewRaw {...props} /></ShortcutProvider>
+}
 
 class MockIntersectionObserver {
   observe(): void {}
