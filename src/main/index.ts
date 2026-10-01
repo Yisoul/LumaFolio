@@ -1,5 +1,5 @@
 import { app, BrowserWindow, Menu, net, protocol } from 'electron'
-import { appendFileSync } from 'node:fs'
+import { appendFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { LEGACY_APP_FOLDER, migrateLegacyAppData } from './app-data'
@@ -54,6 +54,8 @@ function migrateLegacyAppDataSafe(): void {
 }
 
 function createWindow(): BrowserWindow {
+  // 开发模式下窗口图标来自仓库里的 build/icon.png；打包后由 exe 资源里的图标决定。
+  const devIcon = join(__dirname, '../../build/icon.png')
   const window = new BrowserWindow({
     width: 1500,
     height: 940,
@@ -62,6 +64,7 @@ function createWindow(): BrowserWindow {
     show: false,
     backgroundColor: windowBackground,
     title: '光影册 LumaFolio',
+    ...(existsSync(devIcon) ? { icon: devIcon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,

@@ -12,6 +12,7 @@
     "preview": "electron-vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "icon": "node scripts/make-icon.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "package": "npm run build && electron-builder --win nsis",
     "package:dir": "npm run build && electron-builder --win --dir"
@@ -66,7 +67,8 @@
         }
       ],
       "artifactName": "LumaFolio-${version}-Setup.${ext}",
-      "signAndEditExecutable": false
+      "icon": "build/icon.ico",
+      "signExecutable": false
     },
     "nsis": {
       "oneClick": false,

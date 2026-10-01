@@ -182,6 +182,8 @@ node node_modules/electron/install.js
 
 ## 打包
 
+应用图标是仓库里的 `build/icon.svg`，改完跑 `npm run icon` 会重新生成 `build/icon.png` 和多尺寸 `build/icon.ico`，打包时自动写进 exe。
+
 只想本机双击运行、不生成安装包：
 
 ```powershell
