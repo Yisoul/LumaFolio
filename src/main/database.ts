@@ -22,6 +22,7 @@ export interface MediaLocationInput {
   contentHash: string
   sizeBytes: number
   modifiedAt: number
+  metadataVersion?: number
   width: number
   height: number
   format: string
@@ -33,6 +34,7 @@ export interface MediaLocationInput {
   aperture?: number | null
   shutterSpeed?: string | null
   iso?: number | null
+  rating?: number
   orientation: Orientation
 }
 
@@ -46,6 +48,7 @@ export interface MediaLocation {
   modifiedAt: number
   status: 'available' | 'missing'
   preferred: boolean
+  metadataVersion: number
 }
 
 export interface SearchFilters {
@@ -57,11 +60,13 @@ export interface SearchFilters {
   lens?: string
   isoMin?: number
   isoMax?: number
+  ratingMin?: number
+  ratingMax?: number
   favorite?: boolean
   albumId?: string
   rootIds?: string[]
   folderPaths?: string[]
-  sort?: 'captured_desc' | 'captured_asc' | 'added_desc' | 'added_asc' | 'filename_asc' | 'filename_desc'
+  sort?: 'captured_desc' | 'captured_asc' | 'added_desc' | 'added_asc' | 'filename_asc' | 'filename_desc' | 'rating_desc'
   limit: number
   offset: number
 }
@@ -81,6 +86,7 @@ export interface MediaAssetSummary {
   shutterSpeed: string | null
   iso: number | null
   orientation: Orientation
+  rating: number
   favorite: boolean
   missing: boolean
   primaryPath: string | null
@@ -173,6 +179,15 @@ type Row = Record<string, unknown>
 const asNumber = (value: unknown): number => Number(value ?? 0)
 const asString = (value: unknown): string => String(value ?? '')
 const asNullableString = (value: unknown): string | null => (value == null ? null : String(value))
+const normalizeRating = (value: unknown): number => {
+  const numeric = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(numeric)) return 0
+  return Math.max(0, Math.min(5, Math.round(numeric)))
+}
+const normalizeMetadataVersion = (value: unknown): number => {
+  const numeric = Number(value ?? 0)
+  return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : 0
+}
 
 export class AppDatabase {
   private readonly db: DatabaseSync
@@ -214,6 +229,7 @@ export class AppDatabase {
         shutter_speed TEXT,
         iso INTEGER,
         orientation TEXT NOT NULL,
+        rating INTEGER NOT NULL DEFAULT 0,
         favorite INTEGER NOT NULL DEFAULT 0,
         missing INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
@@ -228,6 +244,7 @@ export class AppDatabase {
         relative_path TEXT NOT NULL,
         size_bytes INTEGER NOT NULL,
         modified_at INTEGER NOT NULL,
+        metadata_version INTEGER NOT NULL DEFAULT 0,
         status TEXT NOT NULL DEFAULT 'available',
         preferred INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
@@ -240,6 +257,7 @@ export class AppDatabase {
       CREATE INDEX IF NOT EXISTS idx_media_assets_camera ON media_assets(camera_model);
       CREATE INDEX IF NOT EXISTS idx_media_assets_lens ON media_assets(lens);
       CREATE INDEX IF NOT EXISTS idx_media_assets_iso ON media_assets(iso);
+      CREATE INDEX IF NOT EXISTS idx_media_assets_rating ON media_assets(rating);
 
       CREATE TABLE IF NOT EXISTS ignored_paths (
         path TEXT PRIMARY KEY,
@@ -319,6 +337,7 @@ export class AppDatabase {
       INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (1, unixepoch() * 1000);
     `)
     this.ensureDirectoryPathColumn()
+    this.ensureRatingColumns()
   }
 
   private ensureDirectoryPathColumn(): void {
@@ -330,6 +349,23 @@ export class AppDatabase {
     const update = this.db.prepare('UPDATE media_locations SET directory_path = ? WHERE id = ?')
     for (const row of rows) update.run(dirname(asString(row.absolute_path)), asString(row.id))
     this.db.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (2, unixepoch() * 1000)').run()
+  }
+
+  /**
+   * v3：读入相机/软件写入的星级。已是旧版本的行把 metadata_version 留在 0，
+   * 下次扫描只重读元数据、不重新哈希。
+   */
+  private ensureRatingColumns(): void {
+    const assetColumns = this.db.prepare('PRAGMA table_info(media_assets)').all() as Row[]
+    if (!assetColumns.some((column) => asString(column.name) === 'rating')) {
+      this.db.exec('ALTER TABLE media_assets ADD COLUMN rating INTEGER NOT NULL DEFAULT 0')
+    }
+    const locationColumns = this.db.prepare('PRAGMA table_info(media_locations)').all() as Row[]
+    if (!locationColumns.some((column) => asString(column.name) === 'metadata_version')) {
+      this.db.exec('ALTER TABLE media_locations ADD COLUMN metadata_version INTEGER NOT NULL DEFAULT 0')
+    }
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_media_assets_rating ON media_assets(rating)')
+    this.db.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (3, unixepoch() * 1000)').run()
   }
   close(): void {
     this.db.close()
@@ -393,32 +429,32 @@ export class AppDatabase {
       this.db.prepare(`
         INSERT INTO media_assets(
           id, content_hash, width, height, format, captured_at, camera_make, camera_model, lens,
-          focal_length, aperture, shutter_speed, iso, orientation, favorite, missing, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)
+          focal_length, aperture, shutter_speed, iso, orientation, rating, favorite, missing, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)
       `).run(
         assetId, input.contentHash, input.width, input.height, input.format, input.capturedAt ?? null,
         input.cameraMake ?? null, input.cameraModel ?? null, input.lens ?? null, input.focalLength ?? null,
-        input.aperture ?? null, input.shutterSpeed ?? null, input.iso ?? null, input.orientation, now, now
+        input.aperture ?? null, input.shutterSpeed ?? null, input.iso ?? null, input.orientation, normalizeRating(input.rating), now, now
       )
     } else if (preserveAssetId) {
       this.db.prepare(`
         UPDATE media_assets SET content_hash = ?, width = ?, height = ?, format = ?, captured_at = ?,
           camera_make = ?, camera_model = ?, lens = ?, focal_length = ?, aperture = ?, shutter_speed = ?,
-          iso = ?, orientation = ?, missing = 0, updated_at = ? WHERE id = ?
+          iso = ?, orientation = ?, rating = ?, missing = 0, updated_at = ? WHERE id = ?
       `).run(
         input.contentHash, input.width, input.height, input.format, input.capturedAt ?? null,
         input.cameraMake ?? null, input.cameraModel ?? null, input.lens ?? null, input.focalLength ?? null,
-        input.aperture ?? null, input.shutterSpeed ?? null, input.iso ?? null, input.orientation, now, assetId
+        input.aperture ?? null, input.shutterSpeed ?? null, input.iso ?? null, input.orientation, normalizeRating(input.rating), now, assetId
       )
     } else {
       this.db.prepare(`
         UPDATE media_assets SET width = ?, height = ?, format = ?, captured_at = ?, camera_make = ?,
           camera_model = ?, lens = ?, focal_length = ?, aperture = ?, shutter_speed = ?, iso = ?,
-          orientation = ?, missing = 0, updated_at = ? WHERE id = ?
+          orientation = ?, rating = MAX(rating, ?), missing = 0, updated_at = ? WHERE id = ?
       `).run(
         input.width, input.height, input.format, input.capturedAt ?? null, input.cameraMake ?? null,
         input.cameraModel ?? null, input.lens ?? null, input.focalLength ?? null, input.aperture ?? null,
-        input.shutterSpeed ?? null, input.iso ?? null, input.orientation, now, assetId
+        input.shutterSpeed ?? null, input.iso ?? null, input.orientation, normalizeRating(input.rating), now, assetId
       )
     }
 
@@ -430,17 +466,17 @@ export class AppDatabase {
     if (existingLocation) {
       this.db.prepare(`
         UPDATE media_locations SET asset_id = ?, root_id = ?, relative_path = ?, directory_path = ?, size_bytes = ?, modified_at = ?,
-          status = 'available', preferred = ?, updated_at = ? WHERE id = ?
-      `).run(assetId, input.rootId, input.relativePath, directoryPath, input.sizeBytes, input.modifiedAt, preferred ? 1 : 0, now, locationId)
+          metadata_version = ?, status = 'available', preferred = ?, updated_at = ? WHERE id = ?
+      `).run(assetId, input.rootId, input.relativePath, directoryPath, input.sizeBytes, input.modifiedAt, normalizeMetadataVersion(input.metadataVersion), preferred ? 1 : 0, now, locationId)
     } else {
       this.db.prepare(`
         INSERT INTO media_locations(
           id, asset_id, root_id, absolute_path, relative_path, directory_path, size_bytes, modified_at,
-          status, preferred, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'available', ?, ?, ?)
+          metadata_version, status, preferred, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', ?, ?, ?)
       `).run(
         locationId, assetId, input.rootId, input.absolutePath, input.relativePath, directoryPath, input.sizeBytes,
-        input.modifiedAt, preferred ? 1 : 0, now, now
+        input.modifiedAt, normalizeMetadataVersion(input.metadataVersion), preferred ? 1 : 0, now, now
       )
     }
 
@@ -475,7 +511,8 @@ export class AppDatabase {
       sizeBytes: asNumber(row.size_bytes),
       modifiedAt: asNumber(row.modified_at),
       status: asString(row.status) === 'missing' ? 'missing' : 'available',
-      preferred: Boolean(row.preferred)
+      preferred: Boolean(row.preferred),
+      metadataVersion: asNumber(row.metadata_version)
     }))
   }
 
@@ -706,6 +743,14 @@ export class AppDatabase {
       clauses.push('a.iso <= ?')
       params.push(filters.isoMax)
     }
+    if (filters.ratingMin != null) {
+      clauses.push('a.rating >= ?')
+      params.push(normalizeRating(filters.ratingMin))
+    }
+    if (filters.ratingMax != null) {
+      clauses.push('a.rating <= ?')
+      params.push(normalizeRating(filters.ratingMax))
+    }
     if (filters.favorite != null) {
       clauses.push('a.favorite = ?')
       params.push(filters.favorite ? 1 : 0)
@@ -743,7 +788,8 @@ export class AppDatabase {
       added_desc: `a.created_at DESC, CASE WHEN a.captured_at IS NULL OR a.captured_at = '' THEN 1 ELSE 0 END, a.captured_at DESC, ${filenameOrder} ASC`,
       added_asc: `a.created_at ASC, CASE WHEN a.captured_at IS NULL OR a.captured_at = '' THEN 1 ELSE 0 END, a.captured_at ASC, ${filenameOrder} ASC`,
       filename_asc: `${filenameOrder} ASC`,
-      filename_desc: `${filenameOrder} DESC`
+      filename_desc: `${filenameOrder} DESC`,
+      rating_desc: `a.rating DESC, CASE WHEN a.captured_at IS NULL OR a.captured_at = '' THEN 1 ELSE 0 END, a.captured_at DESC, a.created_at DESC, ${filenameOrder} ASC`
     }[filters.sort ?? 'captured_desc']
     const totalRow = this.db.prepare(`SELECT COUNT(*) AS count FROM media_assets a WHERE ${where}`).get(...params) as Row
     const rows = this.db.prepare(`
@@ -786,6 +832,7 @@ export class AppDatabase {
         shutterSpeed: asNullableString(row.shutter_speed),
         iso: row.iso == null ? null : asNumber(row.iso),
         orientation: asString(row.orientation) as Orientation,
+        rating: asNumber(row.rating),
         favorite: Boolean(row.favorite),
         missing: Boolean(row.missing),
         primaryPath: asNullableString(row.primary_path),
@@ -829,6 +876,11 @@ export class AppDatabase {
     `).run(Date.now(), assetId)
   }
 
+  /** 让某个文件位置在下次扫描时重读元数据（不重新哈希）。 */
+  markLocationMetadataStale(locationId: string): void {
+    this.db.prepare('UPDATE media_locations SET metadata_version = 0 WHERE id = ?').run(locationId)
+  }
+
   getStats(): { assets: number; duplicateGroups: number; missing: number; roots: number } {
     const assets = this.db.prepare(`
       SELECT COUNT(*) AS count FROM media_assets a
@@ -865,6 +917,11 @@ export class AppDatabase {
       FROM media_assets a WHERE a.id = ?
     `).get(assetId) as Row | undefined
     return row ? this.mapAssetSummary(row) : null
+  }
+
+  getAssetContentHash(assetId: string): string | null {
+    const row = this.db.prepare('SELECT content_hash FROM media_assets WHERE id = ?').get(assetId) as Row | undefined
+    return row ? asString(row.content_hash) : null
   }
 
   getPreferredLocation(assetId: string): MediaLocation | null {
@@ -1194,6 +1251,7 @@ export class AppDatabase {
       shutterSpeed: asNullableString(row.shutter_speed),
       iso: row.iso == null ? null : asNumber(row.iso),
       orientation: asString(row.orientation) as Orientation,
+      rating: asNumber(row.rating),
       favorite: Boolean(row.favorite),
       missing: Boolean(row.missing),
       primaryPath: asNullableString(row.primary_path),
@@ -1213,7 +1271,8 @@ export class AppDatabase {
       sizeBytes: asNumber(row.size_bytes),
       modifiedAt: asNumber(row.modified_at),
       status: asString(row.status) === 'missing' ? 'missing' : 'available',
-      preferred: Boolean(row.preferred)
+      preferred: Boolean(row.preferred),
+      metadataVersion: asNumber(row.metadata_version)
     }
   }
 

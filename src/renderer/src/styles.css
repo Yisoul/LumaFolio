@@ -98,6 +98,7 @@ input:focus, select:focus, textarea:focus { border-color: #ce8c71; box-shadow: 0
 .select-dot { position: absolute; top: 10px; left: 10px; display: grid; width: 27px; height: 27px; place-items: center; border: 1px solid rgba(255,255,255,.8); border-radius: 50%; color: #fff; background: rgba(25,25,22,.3); backdrop-filter: blur(5px); }
 .select-dot.active { border-color: #fff; background: var(--accent); }
 .favorite-mark { position: absolute; top: 11px; right: 11px; color: #ffd56b; text-shadow: 0 1px 5px rgba(0,0,0,.5); }
+.rating-mark { position: absolute; top: 38px; right: 11px; color: #ffd56b; font-size: 11px; letter-spacing: -1px; text-shadow: 0 1px 5px rgba(0,0,0,.55); }
 .missing-mark, .duplicate-mark { position: absolute; bottom: 9px; padding: 4px 8px; border-radius: 20px; color: #fff; background: rgba(35,34,30,.68); font-size: 10px; backdrop-filter: blur(4px); }
 .missing-mark { left: 9px; background: rgba(150,53,42,.82); }
 .duplicate-mark { right: 9px; }

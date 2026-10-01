@@ -8,7 +8,7 @@ import type {
 import ContextMenu from './ContextMenu'
 import Editor from './Editor'
 import TextInputDialog from './TextInputDialog'
-import { errorMessage, formatCamera, formatDate, previewUrl, thumbnailUrl } from './helpers'
+import { RATING_FILTER_OPTIONS, errorMessage, formatCamera, formatDate, previewUrl, ratingFilterPatch, ratingFilterValue, ratingStars, thumbnailUrl } from './helpers'
 
 type NavKey = 'library' | 'duplicates' | 'albums' | 'settings'
 
@@ -24,7 +24,7 @@ export default function App() {
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null)
   const [toast, setToast] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
   const [albumDialogOpen, setAlbumDialogOpen] = useState(false)
-  const [theme, setTheme] = useState<AppTheme>('warm')
+  const [theme, setTheme] = useState<AppTheme>('dark')
 
   const refreshStats = useCallback(async () => setStats(await window.albumApi.app.getStats()), [])
   const refreshRoots = useCallback(async () => setRoots(await window.albumApi.library.listRoots()), [])
@@ -240,7 +240,8 @@ function LibraryPage(props: { roots: SourceRoot[]; albums: Album[]; onAddRoots: 
             <select value={filters.orientation ?? ''} onChange={(event) => updateFilters({ orientation: (event.target.value || undefined) as SearchFilters['orientation'] })}><option value="">全部方向</option><option value="landscape">横图</option><option value="portrait">竖图</option><option value="square">方图</option></select>
             <input placeholder="相机品牌或型号" value={filters.cameraModel ?? ''} onChange={(event) => updateFilters({ cameraModel: event.target.value || undefined })} />
             <input placeholder="镜头型号" value={filters.lens ?? ''} onChange={(event) => updateFilters({ lens: event.target.value || undefined })} />
-            <label className="check-label"><input type="checkbox" checked={filters.favorite ?? false} onChange={(event) => updateFilters({ favorite: event.target.checked || undefined })} /> 仅收藏</label><select value={filters.sort ?? 'captured_desc'} onChange={(event) => updateFilters({ sort: event.target.value as SearchFilters['sort'] })}><option value="captured_desc">拍摄时间：新到旧（默认）</option><option value="captured_asc">拍摄时间：旧到新</option><option value="added_desc">导入时间：新到旧</option><option value="added_asc">导入时间：旧到新</option><option value="filename_asc">文件名：A-Z</option><option value="filename_desc">文件名：Z-A</option></select>
+            <select value={ratingFilterValue(filters)} onChange={(event) => updateFilters(ratingFilterPatch(event.target.value))}>{RATING_FILTER_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+            <label className="check-label"><input type="checkbox" checked={filters.favorite ?? false} onChange={(event) => updateFilters({ favorite: event.target.checked || undefined })} /> 仅收藏</label><select value={filters.sort ?? 'captured_desc'} onChange={(event) => updateFilters({ sort: event.target.value as SearchFilters['sort'] })}><SortOptions /></select>
           </div>
           <div className="selection-bar">
             <span className="selection-summary">共 {total.toLocaleString()} 张{selected.size > 0 ? `，已选 ${selected.size} 张` : ''}</span>
@@ -338,6 +339,7 @@ function PhotoCard(props: { asset: MediaAssetSummary; selected: boolean; onToggl
         {unavailable ? <div className="photo-placeholder"><span>▧</span><small>来源已移除</small></div> : <img loading="lazy" src={thumbnailUrl(props.asset.id)} alt={props.asset.primaryPath ?? '照片'} onError={() => setImageFailed(true)} />}
         <button type="button" className={`select-dot ${props.selected ? 'active' : ''}`} aria-label="选择照片" onClick={(event) => { event.stopPropagation(); props.onToggle() }}>{props.selected ? '✓' : ''}</button>
         {props.asset.favorite && <span className="favorite-mark">★</span>}
+        {props.asset.rating > 0 && <span className="rating-mark" title={`相机内评星 ${props.asset.rating} 星`}>{ratingStars(props.asset.rating)}</span>}
         {props.asset.missing && <span className="missing-mark">文件缺失</span>}
         {props.asset.locationCount > 1 && <span className="duplicate-mark">{props.asset.locationCount} 份副本</span>}
       </div>
@@ -413,7 +415,7 @@ function PhotoDetail(props: { asset: MediaAssetSummary; assets: MediaAssetSummar
             {(props.asset.missing || previewFailed) && <div className="preview-missing-message"><strong>原图不可用</strong><span>{props.asset.primaryPath ?? '文件位置已移除或磁盘离线'}</span></div>}
           </div>
         </div>
-        <div className="detail-info"><dl><dt>拍摄时间</dt><dd>{formatDate(props.asset.capturedAt)}</dd><dt>尺寸</dt><dd>{props.asset.width} × {props.asset.height}</dd><dt>拍摄参数</dt><dd>{formatCamera(props.asset)}</dd></dl><button className="button secondary" onClick={() => void favorite()}>{props.asset.favorite ? '取消收藏' : '加入收藏'}</button><h3>文件位置</h3>{locations.map((location) => <div className={`location-row ${location.status === 'missing' ? 'missing' : ''}`} key={location.id}><span title={location.absolutePath}>{location.absolutePath}</span>{location.status === 'available' && <button className="text-button" onClick={() => void window.albumApi.library.showInFolder(location.id)}>定位</button>}</div>)}</div>
+        <div className="detail-info"><dl><dt>拍摄时间</dt><dd>{formatDate(props.asset.capturedAt)}</dd><dt>尺寸</dt><dd>{props.asset.width} × {props.asset.height}</dd><dt>拍摄参数</dt><dd>{formatCamera(props.asset)}</dd><dt>相机评星</dt><dd>{props.asset.rating > 0 ? `${ratingStars(props.asset.rating)} ${props.asset.rating} / 5` : '未评级'}</dd></dl><button className="button secondary" onClick={() => void favorite()}>{props.asset.favorite ? '取消收藏' : '加入收藏'}</button><h3>文件位置</h3>{locations.map((location) => <div className={`location-row ${location.status === 'missing' ? 'missing' : ''}`} key={location.id}><span title={location.absolutePath}>{location.absolutePath}</span>{location.status === 'available' && <button className="text-button" onClick={() => void window.albumApi.library.showInFolder(location.id)}>定位</button>}</div>)}</div>
       </div>
     </Modal>
   )
@@ -563,7 +565,7 @@ function AssetPicker(props: { title: string; onClose: () => void; onConfirm: (id
     <Modal title={props.title} onClose={props.onClose} wide>
       <input className="search-input full" placeholder="搜索文件名或文件夹路径" value={filters.text ?? ''} onChange={(event) => updateFilters({ text: event.target.value || undefined })} />
       <div className="toolbar picker-toolbar">
-        <select value={filters.sort ?? 'captured_desc'} onChange={(event) => updateFilters({ sort: event.target.value as SearchFilters['sort'] })}><option value="captured_desc">拍摄时间：新到旧（默认）</option><option value="captured_asc">拍摄时间：旧到新</option><option value="added_desc">导入时间：新到旧</option><option value="added_asc">导入时间：旧到新</option><option value="filename_asc">文件名：A-Z</option><option value="filename_desc">文件名：Z-A</option></select>
+        <select value={filters.sort ?? 'captured_desc'} onChange={(event) => updateFilters({ sort: event.target.value as SearchFilters['sort'] })}><SortOptions /></select>
         <span>共 {total.toLocaleString()} 张</span>
       </div>
       <FolderBrowser folders={folders} viewMode={viewMode} selectedFolderPaths={filters.folderPaths ?? []} onViewModeChange={(mode) => { setViewMode(mode); if (mode === 'all') updateFilters({ folderPaths: undefined }) }} onSelectedFolderPathsChange={(folderPaths) => updateFilters({ folderPaths: folderPaths.length ? folderPaths : undefined })}>
@@ -584,7 +586,7 @@ function SettingsPage(props: {
   onRefreshStats: () => Promise<void>
   onToast: (toast: { kind: 'info' | 'error'; text: string }) => void
 }) {
-  const [settings, setSettings] = useState<AppSettings>({ thumbnailCacheLimitGb: 10, autoWatch: true, theme: 'warm' })
+  const [settings, setSettings] = useState<AppSettings>({ thumbnailCacheLimitGb: 10, autoWatch: true, theme: 'dark' })
   const [removeTarget, setRemoveTarget] = useState<SourceRoot | null>(null)
   const [impact, setImpact] = useState<SourceRootImpact | null>(null)
   useEffect(() => { void window.albumApi.app.getSettings().then(setSettings) }, [])
@@ -609,10 +611,8 @@ function SettingsPage(props: {
         <h2>界面主题</h2>
         <p className="subtle">主题会立即应用，并保存在本机设置文件。</p>
         <div className="theme-grid">{([
-          ['warm', '暖棕', '经典摄影工作台'],
-          ['ocean', '海蓝', '冷静清爽的蓝色'],
-          ['forest', '森林', '自然低饱和绿色'],
-          ['rose', '玫瑰', '柔和暖红色系']
+          ['dark', '深色', '专注看图的深色工作区'],
+          ['light', '浅色', '明亮清爽的浅色工作区']
         ] as Array<[AppTheme, string, string]>).map(([value, label, description]) => <button key={value} className={`theme-option theme-${value} ${settings.theme === value ? 'active' : ''}`} onClick={() => void save({ ...settings, theme: value })}><i /><span><strong>{label}</strong><small>{description}</small></span></button>)}</div>
       </section>
       <section className="settings-card">
@@ -675,6 +675,18 @@ function toggleSet(current: Set<string>, id: string): Set<string> {
   if (next.has(id)) next.delete(id)
   else next.add(id)
   return next
+}
+
+function SortOptions() {
+  return <>
+    <option value="captured_desc">拍摄时间：新到旧（默认）</option>
+    <option value="captured_asc">拍摄时间：旧到新</option>
+    <option value="added_desc">导入时间：新到旧</option>
+    <option value="added_asc">导入时间：旧到新</option>
+    <option value="rating_desc">星级：高到低</option>
+    <option value="filename_asc">文件名：A-Z</option>
+    <option value="filename_desc">文件名：Z-A</option>
+  </>
 }
 
 function nextWorkName(albumName: string, works: Work[]): string {

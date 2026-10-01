@@ -30,11 +30,13 @@ const searchSchema = z.object({
   lens: z.string().optional(),
   isoMin: z.number().optional(),
   isoMax: z.number().optional(),
+  ratingMin: z.number().int().min(0).max(5).optional(),
+  ratingMax: z.number().int().min(0).max(5).optional(),
   favorite: z.boolean().optional(),
   albumId: z.string().optional(),
   rootIds: z.array(z.string().uuid()).optional(),
   folderPaths: z.array(z.string()).optional(),
-  sort: z.enum(['captured_desc', 'captured_asc', 'added_desc', 'added_asc', 'filename_asc', 'filename_desc']).optional(),
+  sort: z.enum(['captured_desc', 'captured_asc', 'added_desc', 'added_asc', 'filename_asc', 'filename_desc', 'rating_desc']).optional(),
   limit: z.number().int().min(1).max(500).default(120),
   offset: z.number().int().min(0).default(0)
 })

@@ -1,6 +1,6 @@
 export type Orientation = 'landscape' | 'portrait' | 'square'
 export type SourceRemovalMode = 'disable' | 'library' | 'all'
-export type SearchSort = 'captured_desc' | 'captured_asc' | 'added_desc' | 'added_asc' | 'filename_asc' | 'filename_desc'
+export type SearchSort = 'captured_desc' | 'captured_asc' | 'added_desc' | 'added_asc' | 'filename_asc' | 'filename_desc' | 'rating_desc'
 export type LayerOrderAction = 'top' | 'up' | 'down' | 'bottom'
 export type ImageFit = 'cover' | 'contain' | 'stretch'
 
@@ -37,6 +37,7 @@ export interface MediaLocation {
   modifiedAt: number
   status: 'available' | 'missing'
   preferred: boolean
+  metadataVersion: number
 }
 
 export interface MediaAssetSummary {
@@ -54,6 +55,7 @@ export interface MediaAssetSummary {
   shutterSpeed: string | null
   iso: number | null
   orientation: Orientation
+  rating: number
   favorite: boolean
   missing: boolean
   primaryPath: string | null
@@ -71,6 +73,8 @@ export interface SearchFilters {
   lens?: string
   isoMin?: number
   isoMax?: number
+  ratingMin?: number
+  ratingMax?: number
   favorite?: boolean
   albumId?: string
   rootIds?: string[]
@@ -186,7 +190,7 @@ export interface ExportResult {
   pages: number
 }
 
-export type AppTheme = 'warm' | 'ocean' | 'forest' | 'rose'
+export type AppTheme = 'dark' | 'light'
 
 export interface CustomFont {
   id: string

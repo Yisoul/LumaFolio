@@ -5,9 +5,9 @@ import type { AppSettings } from '../shared/types'
 const DEFAULT_SETTINGS: AppSettings = {
   thumbnailCacheLimitGb: 10,
   autoWatch: true,
-  theme: 'warm'
+  theme: 'dark'
 }
-const THEMES = new Set<AppSettings['theme']>(['warm', 'ocean', 'forest', 'rose'])
+const THEMES = new Set<AppSettings['theme']>(['dark', 'light'])
 
 export class SettingsService {
   constructor(private readonly filePath: string) {}
