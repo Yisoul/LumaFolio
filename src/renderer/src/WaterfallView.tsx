@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MediaAssetSummary, SearchFilters } from '../../shared/types'
+import Lightbox from './Lightbox'
 import {
-  RATING_FILTER_OPTIONS, errorMessage, formatCamera, formatDate, previewUrl, ratingFilterPatch, ratingStars, thumbnailUrl
+  RATING_FILTER_OPTIONS, errorMessage, formatCamera, ratingFilterPatch, ratingStars, thumbnailUrl
 } from './helpers'
 
 export interface WaterfallLibrarySource {
@@ -26,6 +27,9 @@ interface WaterfallViewProps {
 
 const PAGE_SIZE = 120
 const LOAD_MORE_MARGIN = 480
+const MIN_COLUMN_WIDTH = 140
+const MAX_COLUMN_WIDTH = 560
+const COLUMN_WIDTH_STEP = 20
 const COLUMN_WIDTHS: Array<{ value: number; label: string }> = [
   { value: 180, label: '密' },
   { value: 240, label: '中' },
@@ -54,6 +58,7 @@ export default function WaterfallView(props: WaterfallViewProps) {
   const [pendingMarkId, setPendingMarkId] = useState<string | null>(null)
   const tempAlbumRef = useRef<string | null>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
   const requestIdRef = useRef(0)
 
   const ratingPatch = useMemo(() => ratingFilterPatch(ratingFilter), [ratingFilter])
@@ -105,6 +110,20 @@ export default function WaterfallView(props: WaterfallViewProps) {
     observer.observe(node)
     return () => observer.disconnect()
   }, [hasMore, loading])
+
+  // Ctrl + 滚轮调整图片大小；用非 passive 监听顺手挡掉 Electron 的整页缩放。
+  useEffect(() => {
+    const node = bodyRef.current
+    if (!node) return
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return
+      event.preventDefault()
+      const direction = event.deltaY > 0 ? -1 : 1
+      setColumnWidth((current) => Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, current + direction * COLUMN_WIDTH_STEP)))
+    }
+    node.addEventListener('wheel', onWheel, { passive: false })
+    return () => node.removeEventListener('wheel', onWheel)
+  }, [])
 
   const ensureTempAlbum = useCallback(async (): Promise<{ id: string; name: string }> => {
     if (tempAlbumRef.current) {
@@ -165,16 +184,13 @@ export default function WaterfallView(props: WaterfallViewProps) {
     const handler = (event: KeyboardEvent) => {
       const target = event.target
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return
+      // 灯箱打开时由 Lightbox 自己接管键盘，避免同一次按键被处理两次。
+      if (lightboxOpen) return
       const key = event.key
-      if (key === 'Escape') {
-        event.preventDefault()
-        if (lightboxOpen) setLightboxOpen(false)
-        else props.onClose()
-        return
-      }
+      if (key === 'Escape') { event.preventDefault(); props.onClose(); return }
       if (key === 'ArrowRight' || key === 'ArrowDown') { event.preventDefault(); step(1); return }
       if (key === 'ArrowLeft' || key === 'ArrowUp') { event.preventDefault(); step(-1); return }
-      if (key === 'Enter') { event.preventDefault(); if (selected) setLightboxOpen(true); return }
+      if (key === 'Enter' || key === ' ') { event.preventDefault(); if (selected) setLightboxOpen(true); return }
       if (key === 't' || key === 'T') { event.preventDefault(); void toggleMark(selected); return }
     }
     window.addEventListener('keydown', handler)
@@ -200,7 +216,7 @@ export default function WaterfallView(props: WaterfallViewProps) {
             <button className={markFilter === 'marked' ? 'active' : ''} onClick={() => setMarkFilter('marked')}>已标记</button>
             <button className={markFilter === 'unmarked' ? 'active' : ''} onClick={() => setMarkFilter('unmarked')}>未标记</button>
           </div>
-          <div className="segmented compact-segmented">
+          <div className="segmented compact-segmented" title="Ctrl + 鼠标滚轮也能调整图片大小">
             {COLUMN_WIDTHS.map((option) => <button key={option.value} className={columnWidth === option.value ? 'active' : ''} onClick={() => setColumnWidth(option.value)}>{option.label}</button>)}
           </div>
           <button className="button secondary compact" onClick={() => void toggleMark(selected)} disabled={!selected || Boolean(pendingMarkId)}>
@@ -210,7 +226,7 @@ export default function WaterfallView(props: WaterfallViewProps) {
         </div>
       </header>
 
-      <div className="waterfall-body">
+      <div className="waterfall-body" ref={bodyRef}>
         {loading && assets.length === 0
           ? <div className="waterfall-hint">正在读取照片…</div>
           : visible.length === 0
@@ -238,21 +254,15 @@ export default function WaterfallView(props: WaterfallViewProps) {
         {marked.has(selected.id) && <b className="waterfall-marked-tag">已加入临时相册{tempAlbumName ? `「${tempAlbumName}」` : ''}</b>}
       </div>}
 
-      {lightboxOpen && selected && <div className="lightbox" onClick={(event) => { if (event.target === event.currentTarget) setLightboxOpen(false) }}>
-        <button className="lightbox-close" onClick={() => setLightboxOpen(false)} aria-label="关闭大图">×</button>
-        <button className="lightbox-nav previous" onClick={() => step(-1)} aria-label="上一张">‹</button>
-        <img className="lightbox-image" src={previewUrl(selected.id, 2560)} alt={fileName(selected.primaryPath)} />
-        <button className="lightbox-nav next" onClick={() => step(1)} aria-label="下一张">›</button>
-        <div className="lightbox-info">
-          <strong>{fileName(selected.primaryPath)}</strong>
-          <span>{formatDate(selected.capturedAt)}</span>
-          <span>{formatCamera(selected)}</span>
-          <span>{selected.rating > 0 ? `${ratingStars(selected.rating)} 相机 ${selected.rating} 星` : '未评级'}</span>
-          <button className="button secondary compact" onClick={() => void toggleMark(selected)} disabled={Boolean(pendingMarkId)}>
-            {marked.has(selected.id) ? '移出临时相册（T）' : '加入临时相册（T）'}
-          </button>
-        </div>
-      </div>}
+      {lightboxOpen && selected && <Lightbox
+        assets={visible}
+        index={Math.max(0, visible.findIndex((asset) => asset.id === selected.id))}
+        onChangeIndex={(index) => setSelectedId(visible[index]?.id ?? null)}
+        onClose={() => setLightboxOpen(false)}
+        marked={marked}
+        pendingMarkId={pendingMarkId}
+        onToggleMark={(asset) => void toggleMark(asset)}
+      />}
     </div>
   )
 }

@@ -466,3 +466,6 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .lightbox-nav.next { right: 18px; }
 .lightbox-info { position: absolute; right: 0; bottom: 0; left: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 14px 22px; color: #d6d6dc; background: linear-gradient(to top, rgba(10,10,12,.94), rgba(10,10,12,0)); font-size: 12px; }
 .lightbox-info .button.secondary { border-color: #33333a; color: #ececed; background: #202024; }
+.lightbox-counter { position: absolute; top: 20px; left: 22px; color: #c9c9cf; font-size: 12px; font-variant-numeric: tabular-nums; }
+.lightbox-missing { display: grid; place-items: center; gap: 8px; padding: 60px; color: #9a9aa2; font-size: 13px; }
+.lightbox-hint { margin-left: auto; color: #8b8b93; font-size: 11px; }

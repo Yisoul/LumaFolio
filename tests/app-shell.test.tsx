@@ -1,10 +1,37 @@
 /** @vitest-environment jsdom */
 import React from 'react'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { MediaAssetSummary } from '../src/shared/types'
 import App from '../src/renderer/src/App'
 
-function stubApi(theme: 'dark' | 'light') {
+function libraryAsset(index: number): MediaAssetSummary {
+  return {
+    id: `asset-${index}`,
+    contentHash: `hash-${index}`,
+    width: 1200,
+    height: 800,
+    format: 'jpeg',
+    capturedAt: '2026-01-01T10:00:00.000Z',
+    cameraMake: 'Fujifilm',
+    cameraModel: 'X-T5',
+    lens: 'XF 35mm F1.4',
+    focalLength: 35,
+    aperture: 1.4,
+    shutterSpeed: '1/250',
+    iso: 200,
+    orientation: 'landscape',
+    rating: 3,
+    favorite: false,
+    missing: false,
+    primaryPath: `C:\\photos\\shot-${index}.jpg`,
+    primaryRootId: 'root-1',
+    primaryDirectoryPath: 'C:\\photos',
+    locationCount: 1
+  }
+}
+
+function stubApi(theme: 'dark' | 'light', assets: MediaAssetSummary[] = [], roots: unknown[] = []) {
   const api = {
     app: {
       getStats: vi.fn(async () => ({ assets: 12, duplicateGroups: 1, missing: 0, roots: 1 })),
@@ -19,8 +46,8 @@ function stubApi(theme: 'dark' | 'light') {
       onScanProgress: vi.fn(() => () => undefined)
     },
     library: {
-      listRoots: vi.fn(async () => []),
-      search: vi.fn(async () => ({ items: [], total: 0 })),
+      listRoots: vi.fn(async () => roots),
+      search: vi.fn(async () => ({ items: assets, total: assets.length })),
       listFolders: vi.fn(async () => []),
       listDuplicates: vi.fn(async () => []),
       getRootImpact: vi.fn(async () => ({ assetCount: 0, locationCount: 0 })),
@@ -82,5 +109,23 @@ describe('App shell', () => {
 
     await waitFor(() => expect(screen.getByText('还没有启用的照片来源')).toBeTruthy())
     expect(document.documentElement.dataset.theme).toBe('dark')
+  })
+
+  it('opens the fullscreen viewer with the space key after selecting a photo', async () => {
+    stubApi('dark', [libraryAsset(1), libraryAsset(2)], [{ id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }])
+    const { container } = render(<App />)
+
+    await waitFor(() => expect(container.querySelectorAll('.photo-card')).toHaveLength(2))
+    fireEvent.click(container.querySelectorAll('.photo-card')[1])
+    fireEvent.keyDown(window, { key: ' ' })
+
+    expect(container.querySelector('.lightbox-image')).not.toBeNull()
+    expect(container.querySelector('.lightbox-info strong')?.textContent).toBe('shot-2.jpg')
+
+    fireEvent.keyDown(window, { key: 'ArrowLeft' })
+    expect(container.querySelector('.lightbox-info strong')?.textContent).toBe('shot-1.jpg')
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(container.querySelector('.lightbox-image')).toBeNull()
   })
 })

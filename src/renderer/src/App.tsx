@@ -7,6 +7,7 @@ import type {
 } from '../../shared/types'
 import ContextMenu from './ContextMenu'
 import Editor from './Editor'
+import Lightbox from './Lightbox'
 import TextInputDialog from './TextInputDialog'
 import WaterfallView from './WaterfallView'
 import { RATING_FILTER_OPTIONS, errorMessage, formatCamera, formatDate, previewUrl, ratingFilterPatch, ratingFilterValue, ratingStars, thumbnailUrl } from './helpers'
@@ -38,6 +39,12 @@ export default function App() {
 
   useEffect(() => { void window.albumApi.app.getSettings().then((settings) => setTheme(settings.theme)).catch(() => undefined) }, [])
   useEffect(() => { document.documentElement.dataset.theme = theme }, [theme])
+  // 桌面端屏蔽 Ctrl+滚轮的整页缩放，这个手势留给全屏瀑布流调图片大小。
+  useEffect(() => {
+    const handler = (event: WheelEvent) => { if (event.ctrlKey || event.metaKey) event.preventDefault() }
+    window.addEventListener('wheel', handler, { passive: false })
+    return () => window.removeEventListener('wheel', handler)
+  }, [])
   useEffect(() => {
     void refreshAll().catch((error) => setToast({ kind: 'error', text: errorMessage(error) }))
     return window.albumApi.app.onScanProgress((progress) => {
@@ -152,6 +159,8 @@ function LibraryPage(props: { roots: SourceRoot[]; albums: Album[]; onAddRoots: 
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [waterfallOpen, setWaterfallOpen] = useState(false)
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const requestIdRef = useRef(0)
   const sentinelRef = useRef<HTMLDivElement>(null)
 
@@ -167,6 +176,22 @@ function LibraryPage(props: { roots: SourceRoot[]; albums: Album[]; onAddRoots: 
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [waterfallOpen])
+
+  // 空格全屏查看当前选中的照片（全局快捷键，图库和相册里都生效）。
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (event.key !== ' ') return
+      if (waterfallOpen || detail || contextMenu || lightboxIndex != null) return
+      const target = event.target
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return
+      const index = photos.findIndex((photo) => photo.id === activeId)
+      if (index < 0) return
+      event.preventDefault()
+      setLightboxIndex(index)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [activeId, contextMenu, detail, lightboxIndex, photos, waterfallOpen])
 
   useEffect(() => {
     const timer = setTimeout(async () => {
@@ -266,13 +291,14 @@ function LibraryPage(props: { roots: SourceRoot[]; albums: Album[]; onAddRoots: 
             </div>
           </div>
           <FolderBrowser folders={folders} viewMode={viewMode} selectedFolderPaths={filters.folderPaths ?? []} onViewModeChange={(mode) => { setViewMode(mode); if (mode === 'all') updateFilters({ folderPaths: undefined }) }} onSelectedFolderPathsChange={(folderPaths) => updateFilters({ folderPaths: folderPaths.length ? folderPaths : undefined })}>
-            {loading && photos.length === 0 ? <div className="loading">正在读取图库…</div> : <PhotoCollection photos={photos} folders={folders} viewMode={viewMode} renderPhoto={(photo) => <PhotoCard key={photo.id} asset={photo} selected={selected.has(photo.id)} onToggle={() => setSelected((current) => toggleSet(current, photo.id))} onOpen={() => setDetail(photo)} onContextMenu={(event) => { event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY, asset: photo }) }} />} />}
+            {loading && photos.length === 0 ? <div className="loading">正在读取图库…</div> : <PhotoCollection photos={photos} folders={folders} viewMode={viewMode} renderPhoto={(photo) => <PhotoCard key={photo.id} asset={photo} selected={selected.has(photo.id)} onToggle={() => { setActiveId(photo.id); setSelected((current) => toggleSet(current, photo.id)) }} onOpen={() => setDetail(photo)} onContextMenu={(event) => { event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY, asset: photo }) }} />} />}
             {photos.length === 0 && !loading && <EmptyState title="没有匹配的照片" text="换个关键词或清空筛选条件。" />}
             {photos.length > 0 && <div className="load-more" ref={sentinelRef}>{hasMore ? <button className="button secondary" disabled={loadingMore} onClick={() => setPage((current) => current + 1)}>{loadingMore ? '正在加载…' : '加载更多'}</button> : <span>已显示全部 {total.toLocaleString()} 张</span>}</div>}
           </FolderBrowser>
         </>
       )}
       {detail && <PhotoDetail asset={detail} assets={photos} onChange={setDetail} onClose={() => setDetail(null)} onToast={props.onToast} />}
+      {lightboxIndex != null && photos[lightboxIndex] && <Lightbox assets={photos} index={lightboxIndex} onChangeIndex={setLightboxIndex} onClose={() => setLightboxIndex(null)} />}
       {waterfallOpen && <WaterfallView source={{ kind: 'library', title: '全屏浏览 · 图库', filters }} onClose={() => setWaterfallOpen(false)} onToast={props.onToast} />}
       {contextMenu && <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)} items={[
         { label: '查看大图', onClick: () => setDetail(contextMenu.asset) },
@@ -486,12 +512,28 @@ function AlbumDetail(props: { album: Album; onBack: () => void; onRefreshAlbums:
   const [pickerOpen, setPickerOpen] = useState(false)
   const [workDialogOpen, setWorkDialogOpen] = useState(false)
   const [waterfallOpen, setWaterfallOpen] = useState(false)
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const [coverAssetId, setCoverAssetId] = useState(props.album.coverAssetId)
   const [detail, setDetail] = useState<MediaAssetSummary | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; asset: MediaAssetSummary } | null>(null)
   const load = useCallback(async () => { const [nextAssets, nextWorks] = await Promise.all([window.albumApi.albums.listAssets(props.album.id), window.albumApi.works.list(props.album.id)]); setAssets(nextAssets); setWorks(nextWorks) }, [props.album.id])
   useEffect(() => { void load() }, [load])
   useEffect(() => setCoverAssetId(props.album.coverAssetId), [props.album.coverAssetId])
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (event.key !== ' ') return
+      if (detail || waterfallOpen || contextMenu || lightboxIndex != null) return
+      const target = event.target
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return
+      const index = assets.findIndex((asset) => asset.id === activeId)
+      if (index < 0) return
+      event.preventDefault()
+      setLightboxIndex(index)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [activeId, assets, contextMenu, detail, lightboxIndex, waterfallOpen])
   const setCover = async (assetId: string) => {
     try {
       await window.albumApi.albums.setCover(props.album.id, assetId)
@@ -513,10 +555,11 @@ function AlbumDetail(props: { album: Album; onBack: () => void; onRefreshAlbums:
   return (
     <section className="page">
       <header className="page-header album-header"><button className="back-button" onClick={props.onBack}>← 全部相册</button><div><p className="eyebrow">ALBUM</p><h1>{props.album.name}</h1><p className="subtle">{assets.length} 张照片 · {works.length} 套作品</p></div><div className="header-actions"><button className="button secondary danger" onClick={() => void removeAlbum()}>删除相册</button><button className="button secondary" onClick={() => setPickerOpen(true)}>＋ 选择照片</button><button className="button secondary" disabled={assets.length === 0} onClick={() => setWaterfallOpen(true)}>全屏浏览</button><button className="button primary" onClick={() => setWorkDialogOpen(true)}>开始排版</button></div></header>
-      <section className="section-block"><div className="section-heading"><h2>照片</h2><div className="button-row">{assets.length > 0 && <button className="text-button" onClick={() => setSelected(selected.size === assets.length ? new Set() : new Set(assets.map((asset) => asset.id)))}>{selected.size === assets.length ? '取消全选' : '全选'}</button>}{selected.size > 0 && <button className="text-button danger" onClick={() => void removeSelected()}>从相册移除 {selected.size} 张</button>}</div></div>{assets.length === 0 ? <EmptyState title="相册还是空的" text="从图库选择照片加入，不会复制原文件。" action="选择照片" onAction={() => setPickerOpen(true)} /> : <div className="photo-grid compact">{assets.map((asset) => <PhotoCard key={asset.id} asset={asset} selected={selected.has(asset.id)} onToggle={() => setSelected((current) => toggleSet(current, asset.id))} onOpen={() => setDetail(asset)} onContextMenu={(event) => { event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY, asset }) }} />)}</div>}</section>
+      <section className="section-block"><div className="section-heading"><h2>照片</h2><div className="button-row">{assets.length > 0 && <button className="text-button" onClick={() => setSelected(selected.size === assets.length ? new Set() : new Set(assets.map((asset) => asset.id)))}>{selected.size === assets.length ? '取消全选' : '全选'}</button>}{selected.size > 0 && <button className="text-button danger" onClick={() => void removeSelected()}>从相册移除 {selected.size} 张</button>}</div></div>{assets.length === 0 ? <EmptyState title="相册还是空的" text="从图库选择照片加入，不会复制原文件。" action="选择照片" onAction={() => setPickerOpen(true)} /> : <div className="photo-grid compact">{assets.map((asset) => <PhotoCard key={asset.id} asset={asset} selected={selected.has(asset.id)} onToggle={() => { setActiveId(asset.id); setSelected((current) => toggleSet(current, asset.id)) }} onOpen={() => setDetail(asset)} onContextMenu={(event) => { event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY, asset }) }} />)}</div>}</section>
       <section className="section-block"><div className="section-heading"><h2>作品版本</h2></div>{works.length === 0 ? <p className="subtle">还没有作品。一个相册可以保存多套不同排版。</p> : <div className="work-grid">{works.map((work) => <article className="work-card" key={work.id}><button className="work-open" onClick={() => props.onOpenWork(work.id)}><div className="work-preview"><span>{work.outputMode === 'long_image' ? '长图' : '多页'}</span></div><strong>{work.name}</strong><small>{work.canvasWidth} × {work.canvasHeight}</small></button><button className="work-delete" onClick={() => void removeWork(work)}>删除作品</button></article>)}</div>}</section>
       {pickerOpen && <AssetPicker title="选择照片加入相册" onClose={() => setPickerOpen(false)} onConfirm={async (ids) => { try { await window.albumApi.albums.addAssets(props.album.id, ids); setPickerOpen(false); await load() } catch (error) { props.onToast({ kind: 'error', text: errorMessage(error) }) } }} />}
       {detail && <PhotoDetail asset={detail} assets={assets} onChange={setDetail} onClose={() => setDetail(null)} onToast={props.onToast} />}
+      {lightboxIndex != null && assets[lightboxIndex] && <Lightbox assets={assets} index={lightboxIndex} onChangeIndex={setLightboxIndex} onClose={() => setLightboxIndex(null)} />}
       {waterfallOpen && <WaterfallView source={{ kind: 'assets', title: `全屏浏览 · ${props.album.name}`, assets }} onClose={() => setWaterfallOpen(false)} onToast={props.onToast} />}
       {contextMenu && <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)} items={[
         { label: '查看大图', onClick: () => setDetail(contextMenu.asset) },

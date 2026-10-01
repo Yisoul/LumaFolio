@@ -160,4 +160,39 @@ describe('WaterfallView', () => {
     await waitFor(() => expect(api.library.search).toHaveBeenLastCalledWith(expect.objectContaining({ ratingMin: 3, ratingMax: undefined })))
     expect(container.querySelector('.waterfall-hint')).toBeNull()
   })
+
+  it('resizes the grid with Ctrl + wheel and keeps the grid unchanged otherwise', async () => {
+    createApiMock([asset(1), asset(2)])
+
+    const { container } = render(<WaterfallView source={{ kind: 'library', title: '图库', filters: { sort: 'captured_desc' } }} onClose={() => undefined} onToast={() => undefined} />)
+
+    await waitFor(() => expect(container.querySelectorAll('.waterfall-item')).toHaveLength(2))
+    const body = container.querySelector('.waterfall-body')!
+    const grid = container.querySelector('.waterfall-grid')!
+    expect((grid as HTMLElement).style.columnWidth).toBe('240px')
+
+    fireEvent.wheel(body, { ctrlKey: true, deltaY: -120 })
+    expect((grid as HTMLElement).style.columnWidth).toBe('260px')
+
+    fireEvent.wheel(body, { ctrlKey: true, deltaY: 120 })
+    fireEvent.wheel(body, { ctrlKey: true, deltaY: 120 })
+    expect((grid as HTMLElement).style.columnWidth).toBe('220px')
+
+    fireEvent.wheel(body, { deltaY: -120 })
+    expect((grid as HTMLElement).style.columnWidth).toBe('220px')
+  })
+
+  it('opens the lightbox with the space key and closes it again', async () => {
+    createApiMock([asset(1), asset(2)])
+
+    const { container } = render(<WaterfallView source={{ kind: 'library', title: '图库', filters: { sort: 'captured_desc' } }} onClose={() => undefined} onToast={() => undefined} />)
+
+    await waitFor(() => expect(container.querySelector('.waterfall-file')?.textContent).toBe('shot-1.jpg'))
+    fireEvent.keyDown(window, { key: ' ' })
+    expect(container.querySelector('.lightbox-image')).not.toBeNull()
+    expect(container.querySelector('.lightbox-counter')?.textContent).toBe('1 / 2')
+
+    fireEvent.keyDown(window, { key: ' ' })
+    expect(container.querySelector('.lightbox-image')).toBeNull()
+  })
 })
