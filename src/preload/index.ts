@@ -13,6 +13,12 @@ const api: AlbumStudioApi = {
     backupNow: () => ipcRenderer.invoke('app:backup-now'),
     readClipboardText: () => ipcRenderer.invoke('app:read-clipboard'),
     writeClipboardText: (text: string) => ipcRenderer.invoke('app:write-clipboard', text),
+    setFullscreen: (enabled: boolean) => ipcRenderer.invoke('app:set-fullscreen', enabled),
+    onFullscreenChange: (callback: (enabled: boolean) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, enabled: boolean): void => callback(enabled)
+      ipcRenderer.on('app:fullscreen-changed', listener)
+      return () => ipcRenderer.removeListener('app:fullscreen-changed', listener)
+    },
     onScanProgress: (callback: (progress: ScanProgress) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, progress: ScanProgress): void => callback(progress)
       ipcRenderer.on('app:scan-progress', listener)

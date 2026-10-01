@@ -42,6 +42,31 @@ describe('AppDatabase', () => {
     }
   })
 
+  it('filters folders recursively and escapes LIKE wildcards', () => {
+    const root = db.createSourceRoot('D:\\LR')
+    const add = (absolutePath: string, directoryPath: string, hash: string): void => {
+      db.upsertMediaLocation({
+        rootId: root.id, absolutePath, relativePath: absolutePath, directoryPath, contentHash: hash,
+        sizeBytes: 1, modifiedAt: 1, width: 100, height: 100, format: 'jpeg', orientation: 'landscape'
+      })
+    }
+    add('D:\\LR\\a\\one.jpg', 'D:\\LR\\a', 'h1')
+    add('D:\\LR\\a\\b\\two.jpg', 'D:\\LR\\a\\b', 'h2')
+    add('D:\\LR\\ab\\three.jpg', 'D:\\LR\\ab', 'h3')
+    add('D:\\LR\\a_1\\four.jpg', 'D:\\LR\\a_1', 'h4')
+    add('D:\\LR\\ax1\\five.jpg', 'D:\\LR\\ax1', 'h5')
+    add('D:\\LR\\100%\\six.jpg', 'D:\\LR\\100%', 'h6')
+    add('D:\\LR\\1000\\seven.jpg', 'D:\\LR\\1000', 'h7')
+
+    // 选父目录要把子目录的照片一起带出来，但不能顺带匹配兄弟目录（ab / a_1 / ax1）。
+    expect(db.searchAssets({ folderPaths: ['D:\\LR\\a'], limit: 10, offset: 0 }).total).toBe(2)
+    expect(db.searchAssets({ folderPaths: ['D:\\LR\\a\\b'], limit: 10, offset: 0 }).total).toBe(1)
+    // 目录名里的 _ 和 % 不能被当成 LIKE 通配符。
+    expect(db.searchAssets({ folderPaths: ['D:\\LR\\a_1'], limit: 10, offset: 0 }).total).toBe(1)
+    expect(db.searchAssets({ folderPaths: ['D:\\LR\\100%'], limit: 10, offset: 0 }).total).toBe(1)
+    expect(db.searchAssets({ folderPaths: ['D:\\LR\\ab'], limit: 10, offset: 0 }).total).toBe(1)
+  })
+
   it('merges identical content into one asset with multiple file locations', () => {
     const firstRoot = db.createSourceRoot('C:\\photos\\a')
     const secondRoot = db.createSourceRoot('C:\\photos\\b')

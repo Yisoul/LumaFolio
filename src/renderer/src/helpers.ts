@@ -59,6 +59,31 @@ export function ratingStars(rating: number): string {
   return '★'.repeat(Math.max(0, Math.min(5, Math.round(rating))))
 }
 
+export function fileName(path: string | null): string {
+  if (!path) return '文件缺失'
+  return path.split(/[\\/]/).pop() || path
+}
+
+export function formatDimensions(asset: Pick<MediaAssetSummary, 'width' | 'height'>): string {
+  if (!asset.width || !asset.height) return '尺寸未知'
+  return `${asset.width} × ${asset.height}`
+}
+
+export function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '未知'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+export function formatDateTime(value: number | string | null): string {
+  if (value == null) return '未知'
+  const date = typeof value === 'number' ? new Date(value) : new Date(value)
+  if (Number.isNaN(date.getTime())) return '未知'
+  return new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+}
+
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }

@@ -46,7 +46,7 @@ function stubApi() {
     albums: { listAssets: vi.fn(async () => []) },
     fonts: { list: vi.fn(async () => []) },
     templates: { save: vi.fn() },
-    app: { getSettings: vi.fn(async () => ({ thumbnailCacheLimitGb: 10, autoWatch: true, theme: 'dark' })) }
+    app: { getSettings: vi.fn(async () => ({ thumbnailCacheLimitGb: 10, autoWatch: true, theme: 'dark', uiScale: 1, thumbnailSize: 200 })) }
   }
   vi.stubGlobal('albumApi', api)
   return api

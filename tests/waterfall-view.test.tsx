@@ -47,6 +47,9 @@ function asset(index: number, overrides: Partial<MediaAssetSummary> = {}): Media
 function createApiMock(assets: MediaAssetSummary[]) {
   const albums = new Map<string, Set<string>>()
   const api = {
+    app: {
+      setFullscreen: vi.fn(async () => undefined)
+    },
     library: {
       search: vi.fn(async (filters: { offset: number; limit: number }) => ({
         items: assets.slice(filters.offset, filters.offset + filters.limit),
@@ -178,14 +181,14 @@ describe('WaterfallView', () => {
     expect((grid as HTMLElement).style.columnWidth).toBe('240px')
 
     fireEvent.wheel(body, { ctrlKey: true, deltaY: -120 })
-    expect((grid as HTMLElement).style.columnWidth).toBe('260px')
+    await waitFor(() => expect((container.querySelector('.waterfall-grid') as HTMLElement).style.columnWidth).toBe('260px'))
 
     fireEvent.wheel(body, { ctrlKey: true, deltaY: 120 })
     fireEvent.wheel(body, { ctrlKey: true, deltaY: 120 })
-    expect((grid as HTMLElement).style.columnWidth).toBe('220px')
+    await waitFor(() => expect((container.querySelector('.waterfall-grid') as HTMLElement).style.columnWidth).toBe('220px'))
 
     fireEvent.wheel(body, { deltaY: -120 })
-    expect((grid as HTMLElement).style.columnWidth).toBe('220px')
+    expect((container.querySelector('.waterfall-grid') as HTMLElement).style.columnWidth).toBe('220px')
   })
 
   it('opens the lightbox with the space key and closes it again', async () => {
@@ -200,5 +203,17 @@ describe('WaterfallView', () => {
 
     fireEvent.keyDown(window, { key: ' ' })
     expect(container.querySelector('.lightbox-image')).toBeNull()
+  })
+
+  it('switches the window to system fullscreen while open', async () => {
+    const { api } = createApiMock([asset(1)])
+
+    const { container, unmount } = render(<WaterfallView source={{ kind: 'library', title: '图库', filters: { sort: 'captured_desc' } }} onClose={() => undefined} onToast={() => undefined} />)
+
+    await waitFor(() => expect(container.querySelectorAll('.waterfall-item')).toHaveLength(1))
+    expect(api.app.setFullscreen).toHaveBeenCalledWith(true)
+
+    unmount()
+    expect(api.app.setFullscreen).toHaveBeenLastCalledWith(false)
   })
 })

@@ -43,6 +43,8 @@ export interface MediaLocation {
 export interface MediaAssetSummary {
   id: string
   contentHash: string
+  /** 加入图库的时间戳。 */
+  addedAt: number
   width: number
   height: number
   format: string
@@ -204,6 +206,8 @@ export interface AppSettings {
   theme: AppTheme
   /** 整体界面缩放比例，1 表示 100%。 */
   uiScale: number
+  /** 对齐行网格的目标行高，单位 px。 */
+  thumbnailSize: number
 }
 
 export interface ScanSummary {

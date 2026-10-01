@@ -86,6 +86,10 @@ export function registerIpcHandlers(context: IpcContext): () => void {
 
   handle('app:read-clipboard', () => clipboard.readText())
   handle('app:write-clipboard', (_event, text: string) => clipboard.writeText(z.string().parse(text)))
+  handle('app:set-fullscreen', (_event, enabled: boolean) => {
+    const owner = context.getWindow()
+    if (owner && !owner.isDestroyed()) owner.setFullScreen(Boolean(enabled))
+  })
 
   handle('library:list-roots', () => context.db.listSourceRoots())
   handle('library:add-roots', async (_event, paths: string[]) => {

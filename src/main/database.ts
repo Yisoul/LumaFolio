@@ -74,6 +74,7 @@ export interface SearchFilters {
 export interface MediaAssetSummary {
   id: string
   contentHash: string
+  addedAt: number
   width: number
   height: number
   format: string
@@ -188,6 +189,8 @@ const normalizeMetadataVersion = (value: unknown): number => {
   const numeric = Number(value ?? 0)
   return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : 0
 }
+/** 转义 LIKE 的通配符，避免 DSC_2024 这类目录名匹配到别的目录。 */
+const escapeLikePattern = (value: string): string => value.replace(/[\\%_]/g, (char) => `\\${char}`)
 
 export class AppDatabase {
   private readonly db: DatabaseSync
@@ -769,14 +772,24 @@ export class AppDatabase {
       params.push(...filters.rootIds)
     }
     if (filters.folderPaths?.length) {
-      const placeholders = filters.folderPaths.map(() => '?').join(', ')
+      // 选父目录时把它下面的子目录照片一起带出来，所以是前缀匹配而不只是相等。
+      const conditions: string[] = []
+      for (const folderPath of filters.folderPaths) {
+        const normalized = folderPath.replace(/[\\/]+$/, '')
+        conditions.push('directory_filter.directory_path = ?')
+        params.push(normalized)
+        conditions.push("directory_filter.directory_path LIKE ? ESCAPE '\\'")
+        // 目录 + 分隔符 + 任意后缀，这样 D:\LR\a 不会匹配到 D:\LR\ab。
+        params.push(`${escapeLikePattern(normalized)}\\\\%`)
+        conditions.push("directory_filter.directory_path LIKE ? ESCAPE '\\'")
+        params.push(`${escapeLikePattern(normalized)}/%`)
+      }
       clauses.push(`EXISTS (
         SELECT 1 FROM media_locations directory_filter
         WHERE directory_filter.asset_id = a.id
           AND directory_filter.status = 'available'
-          AND directory_filter.directory_path IN (${placeholders})
+          AND (${conditions.join(' OR ')})
       )`)
-      params.push(...filters.folderPaths)
     }
 
     const where = clauses.join(' AND ')
@@ -819,6 +832,7 @@ export class AppDatabase {
       items: rows.map((row) => ({
         id: asString(row.id),
         contentHash: asString(row.content_hash),
+        addedAt: asNumber(row.created_at),
         width: asNumber(row.width),
         height: asNumber(row.height),
         format: asString(row.format),
@@ -1238,6 +1252,7 @@ export class AppDatabase {
     return {
       id: asString(row.id),
       contentHash: asString(row.content_hash),
+      addedAt: asNumber(row.created_at),
       width: asNumber(row.width),
       height: asNumber(row.height),
       format: asString(row.format),

@@ -41,7 +41,7 @@ function stubApi(theme: 'dark' | 'light', assets: MediaAssetSummary[] = [], root
   const api = {
     app: {
       getStats: vi.fn(async () => ({ assets: 12, duplicateGroups: 1, missing: 0, roots: 1 })),
-      getSettings: vi.fn(async () => ({ thumbnailCacheLimitGb: 10, autoWatch: true, theme, uiScale: 1 })),
+      getSettings: vi.fn(async () => ({ thumbnailCacheLimitGb: 10, autoWatch: true, theme, uiScale: 1, thumbnailSize: 200 })),
       saveSettings: vi.fn(async (settings: unknown) => settings),
       chooseFolders: vi.fn(async () => []),
       chooseExportDirectory: vi.fn(async () => null),
@@ -49,6 +49,8 @@ function stubApi(theme: 'dark' | 'light', assets: MediaAssetSummary[] = [], root
       backupNow: vi.fn(async () => 'C:\\backup.sqlite'),
       readClipboardText: vi.fn(async () => ''),
       writeClipboardText: vi.fn(async () => undefined),
+      setFullscreen: vi.fn(async () => undefined),
+      onFullscreenChange: vi.fn(() => () => undefined),
       onScanProgress: vi.fn(() => () => undefined)
     },
     library: {
@@ -121,8 +123,8 @@ describe('App shell', () => {
     stubApi('dark', [libraryAsset(1), libraryAsset(2)], [{ id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }])
     const { container } = render(<App />)
 
-    await waitFor(() => expect(container.querySelectorAll('.photo-card')).toHaveLength(2))
-    fireEvent.click(container.querySelectorAll('.photo-card')[1])
+    await waitFor(() => expect(container.querySelectorAll('.tile')).toHaveLength(2))
+    fireEvent.click(container.querySelectorAll('.tile-image')[1])
     fireEvent.keyDown(window, { key: ' ' })
 
     expect(container.querySelector('.lightbox-image')).not.toBeNull()
@@ -137,8 +139,8 @@ describe('App shell', () => {
 
   it('switches pages with Ctrl+number and focuses the search box with /', async () => {
     stubApi('dark', [libraryAsset(1)], [{ id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }])
-    render(<App />)
-    await waitFor(() => expect(screen.getByRole('heading', { name: '图库' })).toBeTruthy())
+    const { container } = render(<App />)
+    await waitFor(() => expect(container.querySelector('.browse-toolbar')).not.toBeNull())
 
     fireEvent.keyDown(window, { key: '4', ctrlKey: true })
     await waitFor(() => expect(screen.getByText('照片来源目录')).toBeTruthy())
@@ -150,14 +152,14 @@ describe('App shell', () => {
     fireEvent.keyDown(window, { key: '4', ctrlKey: true })
     await waitFor(() => expect(screen.getByText('照片来源目录')).toBeTruthy())
     fireEvent.keyDown(window, { key: '1', ctrlKey: true })
-    await waitFor(() => expect(screen.getByRole('heading', { name: '图库' })).toBeTruthy())
+    await waitFor(() => expect(container.querySelector('.browse-toolbar')).not.toBeNull())
     expect(document.activeElement).not.toBe(screen.getByPlaceholderText('搜索文件名或文件夹路径'))
   })
 
   it('opens the shortcut help with ? and closes it with Escape', async () => {
     stubApi('dark')
-    render(<App />)
-    await waitFor(() => expect(screen.getByRole('heading', { name: '图库' })).toBeTruthy())
+    const { container } = render(<App />)
+    await waitFor(() => expect(container.querySelector('.browse-toolbar')).not.toBeNull())
 
     fireEvent.keyDown(window, { key: '?', shiftKey: true })
     expect(await screen.findByRole('heading', { name: '快捷键' })).toBeTruthy()
@@ -171,19 +173,19 @@ describe('App shell', () => {
     const api = stubApi('dark', [libraryAsset(1)], [{ id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }])
     const { container } = render(<App />)
 
-    await waitFor(() => expect(container.querySelectorAll('.photo-card')).toHaveLength(1))
-    fireEvent.click(container.querySelector('.photo-card')!)
+    await waitFor(() => expect(container.querySelectorAll('.tile')).toHaveLength(1))
+    fireEvent.click(container.querySelector('.tile-image')!)
     fireEvent.keyDown(window, { key: 'Delete' })
 
     expect(api.library.ignoreAsset).not.toHaveBeenCalled()
     expect(api.library.deleteOriginal).not.toHaveBeenCalled()
-    expect(container.querySelectorAll('.photo-card')).toHaveLength(1)
+    expect(container.querySelectorAll('.tile')).toHaveLength(1)
   })
 
   it('changes the interface scale from the settings page', async () => {
     const api = stubApi('dark')
-    render(<App />)
-    await waitFor(() => expect(screen.getByRole('heading', { name: '图库' })).toBeTruthy())
+    const { container } = render(<App />)
+    await waitFor(() => expect(container.querySelector('.browse-toolbar')).not.toBeNull())
 
     fireEvent.keyDown(window, { key: '4', ctrlKey: true })
     await waitFor(() => expect(screen.getByText('界面缩放')).toBeTruthy())
@@ -194,8 +196,8 @@ describe('App shell', () => {
 
   it('steps the interface scale with Ctrl shortcuts', async () => {
     const api = stubApi('dark')
-    render(<App />)
-    await waitFor(() => expect(screen.getByRole('heading', { name: '图库' })).toBeTruthy())
+    const { container } = render(<App />)
+    await waitFor(() => expect(container.querySelector('.browse-toolbar')).not.toBeNull())
 
     fireEvent.keyDown(window, { key: '=', ctrlKey: true })
     await waitFor(() => expect(api.app.saveSettings).toHaveBeenLastCalledWith(expect.objectContaining({ uiScale: 1.1 })))
@@ -205,5 +207,46 @@ describe('App shell', () => {
 
     fireEvent.keyDown(window, { key: '0', ctrlKey: true })
     await waitFor(() => expect(api.app.saveSettings).toHaveBeenLastCalledWith(expect.objectContaining({ uiScale: 1 })))
+  })
+
+  it('keeps the interface scale when the theme changes', async () => {
+    const api = stubApi('dark')
+    const { container } = render(<App />)
+    await waitFor(() => expect(container.querySelector('.browse-toolbar')).not.toBeNull())
+
+    fireEvent.keyDown(window, { key: '=', ctrlKey: true })
+    await waitFor(() => expect(api.app.saveSettings).toHaveBeenLastCalledWith(expect.objectContaining({ uiScale: 1.1 })))
+
+    fireEvent.keyDown(window, { key: '4', ctrlKey: true })
+    await waitFor(() => expect(screen.getByText('外观')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /浅色/ }))
+
+    await waitFor(() => expect(api.app.saveSettings).toHaveBeenLastCalledWith(expect.objectContaining({ theme: 'light', uiScale: 1.1 })))
+  })
+
+  it('shows the selected photo in the inspector without a rename field', async () => {
+    stubApi('dark', [libraryAsset(1)], [{ id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }])
+    const { container } = render(<App />)
+
+    await waitFor(() => expect(container.querySelectorAll('.tile')).toHaveLength(1))
+    fireEvent.click(container.querySelector('.tile-image')!)
+
+    await waitFor(() => expect(container.querySelector('.inspector-panel')).not.toBeNull())
+    expect(container.querySelector('.inspector-name')?.textContent).toBe('shot-1.jpg')
+    // 原图不允许重命名，信息栏里不应该出现输入框。
+    expect(container.querySelector('.inspector-panel input')).toBeNull()
+  })
+
+  it('highlights active filter chips and clears them', async () => {
+    stubApi('dark', [libraryAsset(1)], [{ id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }])
+    const { container } = render(<App />)
+    await waitFor(() => expect(container.querySelector('.browse-toolbar')).not.toBeNull())
+
+    fireEvent.click(screen.getByRole('button', { name: /星级/ }))
+    fireEvent.click(screen.getByRole('button', { name: '≥3 星' }))
+    await waitFor(() => expect(container.querySelector('.chip.active')?.textContent).toContain('≥3 星'))
+
+    fireEvent.click(screen.getByRole('button', { name: /清除筛选/ }))
+    await waitFor(() => expect(container.querySelector('.chip.active')).toBeNull())
   })
 })

@@ -60,6 +60,8 @@ export interface AlbumStudioApi {
     backupNow(): Promise<string>
     readClipboardText(): Promise<string>
     writeClipboardText(text: string): Promise<void>
+    setFullscreen(enabled: boolean): Promise<void>
+    onFullscreenChange(callback: (enabled: boolean) => void): () => void
     onScanProgress(callback: (progress: ScanProgress) => void): () => void
   }
   library: {

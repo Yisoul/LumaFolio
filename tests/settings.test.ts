@@ -33,15 +33,16 @@ describe('SettingsService', () => {
 
   it('clamps the interface scale into 0.8 - 1.5', async () => {
     const service = new SettingsService(file)
-    expect((await service.save({ thumbnailCacheLimitGb: 10, autoWatch: true, theme: 'dark', uiScale: 3 })).uiScale).toBe(1.5)
-    expect((await service.save({ thumbnailCacheLimitGb: 10, autoWatch: true, theme: 'dark', uiScale: 0.2 })).uiScale).toBe(0.8)
+    expect((await service.save({ thumbnailCacheLimitGb: 10, autoWatch: true, theme: 'dark', uiScale: 3, thumbnailSize: 200 })).uiScale).toBe(1.5)
+    expect((await service.save({ thumbnailCacheLimitGb: 10, autoWatch: true, theme: 'dark', uiScale: 0.2, thumbnailSize: 200 })).uiScale).toBe(0.8)
   })
 
   it('persists the interface scale across reads', async () => {
     const service = new SettingsService(file)
-    await service.save({ thumbnailCacheLimitGb: 10, autoWatch: true, theme: 'light', uiScale: 1.25 })
+    await service.save({ thumbnailCacheLimitGb: 10, autoWatch: true, theme: 'light', uiScale: 1.25, thumbnailSize: 260 })
     const settings = await service.get()
     expect(settings.uiScale).toBe(1.25)
+    expect(settings.thumbnailSize).toBe(260)
     expect(settings.theme).toBe('light')
   })
 })

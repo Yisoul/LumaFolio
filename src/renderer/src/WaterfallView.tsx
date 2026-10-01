@@ -31,11 +31,6 @@ const LOAD_MORE_MARGIN = 480
 const MIN_COLUMN_WIDTH = 140
 const MAX_COLUMN_WIDTH = 560
 const COLUMN_WIDTH_STEP = 20
-const COLUMN_WIDTHS: Array<{ value: number; label: string }> = [
-  { value: 180, label: '密' },
-  { value: 240, label: '中' },
-  { value: 320, label: '疏' }
-]
 
 type MarkFilter = 'all' | 'marked' | 'unmarked'
 
@@ -61,6 +56,8 @@ export default function WaterfallView(props: WaterfallViewProps) {
   const sentinelRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const requestIdRef = useRef(0)
+  const columnWidthRef = useRef(240)
+  const frameRef = useRef<number | null>(null)
 
   const ratingPatch = useMemo(() => ratingFilterPatch(ratingFilter), [ratingFilter])
   const ratingPatchKey = `${ratingPatch.ratingMin ?? ''}:${ratingPatch.ratingMax ?? ''}`
@@ -120,10 +117,25 @@ export default function WaterfallView(props: WaterfallViewProps) {
       if (!event.ctrlKey && !event.metaKey) return
       event.preventDefault()
       const direction = event.deltaY > 0 ? -1 : 1
-      setColumnWidth((current) => Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, current + direction * COLUMN_WIDTH_STEP)))
+      // 一帧只重排一次，连续滚轮不会卡。
+      columnWidthRef.current = Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, columnWidthRef.current + direction * COLUMN_WIDTH_STEP))
+      if (frameRef.current != null) return
+      frameRef.current = window.requestAnimationFrame(() => {
+        frameRef.current = null
+        setColumnWidth(columnWidthRef.current)
+      })
     }
     node.addEventListener('wheel', onWheel, { passive: false })
-    return () => node.removeEventListener('wheel', onWheel)
+    return () => {
+      node.removeEventListener('wheel', onWheel)
+      if (frameRef.current != null) window.cancelAnimationFrame(frameRef.current)
+    }
+  }, [])
+
+  // 进入全屏浏览切系统全屏，退出时恢复窗口。
+  useEffect(() => {
+    void window.albumApi.app.setFullscreen(true).catch(() => undefined)
+    return () => { void window.albumApi.app.setFullscreen(false).catch(() => undefined) }
   }, [])
 
   const ensureTempAlbum = useCallback(async (): Promise<{ id: string; name: string }> => {
@@ -206,9 +218,6 @@ export default function WaterfallView(props: WaterfallViewProps) {
             <button className={markFilter === 'all' ? 'active' : ''} onClick={() => setMarkFilter('all')}>全部</button>
             <button className={markFilter === 'marked' ? 'active' : ''} onClick={() => setMarkFilter('marked')}>已标记</button>
             <button className={markFilter === 'unmarked' ? 'active' : ''} onClick={() => setMarkFilter('unmarked')}>未标记</button>
-          </div>
-          <div className="segmented compact-segmented" title="Ctrl + 鼠标滚轮也能调整图片大小">
-            {COLUMN_WIDTHS.map((option) => <button key={option.value} className={columnWidth === option.value ? 'active' : ''} onClick={() => setColumnWidth(option.value)}>{option.label}</button>)}
           </div>
           <button className="button secondary compact" onClick={() => void toggleMark(selected)} disabled={!selected || Boolean(pendingMarkId)}>
             {selected && marked.has(selected.id) ? '移出临时相册' : '加入临时相册'}（T）

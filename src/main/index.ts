@@ -104,6 +104,12 @@ function createWindow(): BrowserWindow {
   }
   window.on('show', () => logStartup('window shown'))
   window.on('unresponsive', () => logStartup('window unresponsive'))
+  const notifyFullscreen = (enabled: boolean) => {
+    logStartup(`fullscreen ${enabled}`)
+    if (!window.isDestroyed()) window.webContents.send('app:fullscreen-changed', enabled)
+  }
+  window.on('enter-full-screen', () => notifyFullscreen(true))
+  window.on('leave-full-screen', () => notifyFullscreen(false))
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = null
   })
