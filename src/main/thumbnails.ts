@@ -5,6 +5,10 @@ import type { AppDatabase } from './database'
 
 export class ThumbnailService {
   private readonly pending = new Map<string, Promise<string>>()
+  private active = 0
+  private readonly queue: Array<() => void> = []
+  /** 同时最多生成 4 张，避免快速滚动时几十张缩略图一起抢 CPU 造成卡顿。 */
+  private readonly maxConcurrent = 4
 
   constructor(
     private readonly db: AppDatabase,
@@ -68,12 +72,31 @@ export class ThumbnailService {
       // Cache miss.
     }
 
-    const temporaryPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`
+    return this.withSlot(() => this.renderToCache(location.absolutePath, cachePath, safeSize, quality))
+  }
+
+  private async withSlot<T>(task: () => Promise<T>): Promise<T> {
+    if (this.active >= this.maxConcurrent) {
+      await new Promise<void>((resolve) => this.queue.push(resolve))
+    }
+    this.active += 1
     try {
-      await sharp(location.absolutePath, { failOn: 'none' })
+      return await task()
+    } finally {
+      this.active -= 1
+      this.queue.shift()?.()
+    }
+  }
+
+  private async renderToCache(sourcePath: string, cachePath: string, safeSize: number, quality: number): Promise<string> {
+    const temporaryPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`
+    // 大图只求快，缩略图才值得多花点编码时间换体积。
+    const effort = safeSize >= 1280 ? 2 : 4
+    try {
+      await sharp(sourcePath, { failOn: 'none' })
         .rotate()
         .resize({ width: safeSize, height: safeSize, fit: 'inside', withoutEnlargement: true })
-        .webp({ quality, effort: 4 })
+        .webp({ quality, effort })
         .toFile(temporaryPath)
       await rename(temporaryPath, cachePath)
       return cachePath

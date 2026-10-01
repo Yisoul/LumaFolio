@@ -1,23 +1,26 @@
 {
-  "name": "album-studio",
-  "version": "0.1.1",
+  "name": "luma-folio",
+  "version": "0.2.0",
   "private": true,
-  "description": "本地摄影相册与社交作品排版工具",
+  "description": "LumaFolio 光影册 · 把散落的照片，整理成作品。",
   "main": "./out/main/index.js",
-  "author": "Album Studio",
-  "license": "UNLICENSED",
+  "author": "LumaFolio",
+  "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "icon": "node scripts/make-icon.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "package": "npm run build && electron-builder --win nsis"
+    "package": "npm run build && electron-builder --win nsis",
+    "package:dir": "npm run build && electron-builder --win --dir"
   },
   "dependencies": {
     "chokidar": "^5.0.0",
     "exifr": "^7.1.3",
+    "fontkit": "^2.0.4",
     "konva": "^10.5.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
@@ -39,12 +42,12 @@
     "electron-vite": "^5.0.0",
     "jsdom": "^30.0.1",
     "typescript": "^7.0.2",
-    "vitest": "^3.2.4",
-    "vite": "^7.3.6"
+    "vite": "^7.3.6",
+    "vitest": "^3.2.4"
   },
   "build": {
-    "appId": "com.albumstudio.desktop",
-    "productName": "相册工作台",
+    "appId": "com.lumafolio.desktop",
+    "productName": "LumaFolio",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -63,8 +66,9 @@
           ]
         }
       ],
-      "artifactName": "Album-Studio-${version}-Setup.${ext}",
-      "signAndEditExecutable": false
+      "artifactName": "LumaFolio-${version}-Setup.${ext}",
+      "icon": "build/icon.ico",
+      "signExecutable": false
     },
     "nsis": {
       "oneClick": false,

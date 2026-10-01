@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
+import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import type { SourceRemovalMode, SourceRemovalResult, SourceRootImpact } from '../shared/types'
+import type { FolderSummary, ImageFit, LayerOrderAction, SourceRemovalMode, SourceRemovalResult, SourceRootImpact } from '../shared/types'
 
 export type Orientation = 'landscape' | 'portrait' | 'square'
 export type OutputMode = 'pages' | 'long_image'
@@ -15,11 +16,13 @@ export interface SourceRoot {
 
 export interface MediaLocationInput {
   rootId: string
+  directoryPath?: string
   absolutePath: string
   relativePath: string
   contentHash: string
   sizeBytes: number
   modifiedAt: number
+  metadataVersion?: number
   width: number
   height: number
   format: string
@@ -31,6 +34,7 @@ export interface MediaLocationInput {
   aperture?: number | null
   shutterSpeed?: string | null
   iso?: number | null
+  rating?: number
   orientation: Orientation
 }
 
@@ -44,6 +48,7 @@ export interface MediaLocation {
   modifiedAt: number
   status: 'available' | 'missing'
   preferred: boolean
+  metadataVersion: number
 }
 
 export interface SearchFilters {
@@ -55,8 +60,13 @@ export interface SearchFilters {
   lens?: string
   isoMin?: number
   isoMax?: number
+  ratingMin?: number
+  ratingMax?: number
   favorite?: boolean
   albumId?: string
+  rootIds?: string[]
+  folderPaths?: string[]
+  sort?: 'captured_desc' | 'captured_asc' | 'added_desc' | 'added_asc' | 'filename_asc' | 'filename_desc' | 'rating_desc'
   limit: number
   offset: number
 }
@@ -64,6 +74,7 @@ export interface SearchFilters {
 export interface MediaAssetSummary {
   id: string
   contentHash: string
+  addedAt: number
   width: number
   height: number
   format: string
@@ -76,9 +87,12 @@ export interface MediaAssetSummary {
   shutterSpeed: string | null
   iso: number | null
   orientation: Orientation
+  rating: number
   favorite: boolean
   missing: boolean
   primaryPath: string | null
+  primaryRootId: string | null
+  primaryDirectoryPath: string | null
   locationCount: number
 }
 export interface Album {
@@ -131,7 +145,7 @@ export interface ImageLayerInput {
   height: number
   rotation: number
   zIndex: number
-  fit: 'cover' | 'contain'
+  fit: ImageFit
   radius: number
 }
 
@@ -166,6 +180,17 @@ type Row = Record<string, unknown>
 const asNumber = (value: unknown): number => Number(value ?? 0)
 const asString = (value: unknown): string => String(value ?? '')
 const asNullableString = (value: unknown): string | null => (value == null ? null : String(value))
+const normalizeRating = (value: unknown): number => {
+  const numeric = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(numeric)) return 0
+  return Math.max(0, Math.min(5, Math.round(numeric)))
+}
+const normalizeMetadataVersion = (value: unknown): number => {
+  const numeric = Number(value ?? 0)
+  return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : 0
+}
+/** 转义 LIKE 的通配符，避免 DSC_2024 这类目录名匹配到别的目录。 */
+const escapeLikePattern = (value: string): string => value.replace(/[\\%_]/g, (char) => `\\${char}`)
 
 export class AppDatabase {
   private readonly db: DatabaseSync
@@ -207,6 +232,7 @@ export class AppDatabase {
         shutter_speed TEXT,
         iso INTEGER,
         orientation TEXT NOT NULL,
+        rating INTEGER NOT NULL DEFAULT 0,
         favorite INTEGER NOT NULL DEFAULT 0,
         missing INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
@@ -221,6 +247,7 @@ export class AppDatabase {
         relative_path TEXT NOT NULL,
         size_bytes INTEGER NOT NULL,
         modified_at INTEGER NOT NULL,
+        metadata_version INTEGER NOT NULL DEFAULT 0,
         status TEXT NOT NULL DEFAULT 'available',
         preferred INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
@@ -311,8 +338,37 @@ export class AppDatabase {
 
       INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (1, unixepoch() * 1000);
     `)
+    this.ensureDirectoryPathColumn()
+    this.ensureRatingColumns()
   }
 
+  private ensureDirectoryPathColumn(): void {
+    const columns = this.db.prepare('PRAGMA table_info(media_locations)').all() as Row[]
+    if (!columns.some((column) => asString(column.name) === 'directory_path')) {
+      this.db.exec("ALTER TABLE media_locations ADD COLUMN directory_path TEXT NOT NULL DEFAULT ''")
+    }
+    const rows = this.db.prepare("SELECT id, absolute_path FROM media_locations WHERE directory_path = ''").all() as Row[]
+    const update = this.db.prepare('UPDATE media_locations SET directory_path = ? WHERE id = ?')
+    for (const row of rows) update.run(dirname(asString(row.absolute_path)), asString(row.id))
+    this.db.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (2, unixepoch() * 1000)').run()
+  }
+
+  /**
+   * v3：读入相机/软件写入的星级。已是旧版本的行把 metadata_version 留在 0，
+   * 下次扫描只重读元数据、不重新哈希。
+   */
+  private ensureRatingColumns(): void {
+    const assetColumns = this.db.prepare('PRAGMA table_info(media_assets)').all() as Row[]
+    if (!assetColumns.some((column) => asString(column.name) === 'rating')) {
+      this.db.exec('ALTER TABLE media_assets ADD COLUMN rating INTEGER NOT NULL DEFAULT 0')
+    }
+    const locationColumns = this.db.prepare('PRAGMA table_info(media_locations)').all() as Row[]
+    if (!locationColumns.some((column) => asString(column.name) === 'metadata_version')) {
+      this.db.exec('ALTER TABLE media_locations ADD COLUMN metadata_version INTEGER NOT NULL DEFAULT 0')
+    }
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_media_assets_rating ON media_assets(rating)')
+    this.db.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (3, unixepoch() * 1000)').run()
+  }
   close(): void {
     this.db.close()
   }
@@ -338,6 +394,7 @@ export class AppDatabase {
 
   upsertMediaLocation(input: MediaLocationInput): { assetId: string; locationId: string } {
     const now = Date.now()
+    const directoryPath = input.directoryPath ?? dirname(input.absolutePath)
     const existingLocation = this.db.prepare('SELECT id, asset_id FROM media_locations WHERE absolute_path = ?').get(input.absolutePath) as Row | undefined
     const hashAsset = this.db.prepare('SELECT id FROM media_assets WHERE content_hash = ?').get(input.contentHash) as Row | undefined
 
@@ -374,32 +431,32 @@ export class AppDatabase {
       this.db.prepare(`
         INSERT INTO media_assets(
           id, content_hash, width, height, format, captured_at, camera_make, camera_model, lens,
-          focal_length, aperture, shutter_speed, iso, orientation, favorite, missing, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)
+          focal_length, aperture, shutter_speed, iso, orientation, rating, favorite, missing, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)
       `).run(
         assetId, input.contentHash, input.width, input.height, input.format, input.capturedAt ?? null,
         input.cameraMake ?? null, input.cameraModel ?? null, input.lens ?? null, input.focalLength ?? null,
-        input.aperture ?? null, input.shutterSpeed ?? null, input.iso ?? null, input.orientation, now, now
+        input.aperture ?? null, input.shutterSpeed ?? null, input.iso ?? null, input.orientation, normalizeRating(input.rating), now, now
       )
     } else if (preserveAssetId) {
       this.db.prepare(`
         UPDATE media_assets SET content_hash = ?, width = ?, height = ?, format = ?, captured_at = ?,
           camera_make = ?, camera_model = ?, lens = ?, focal_length = ?, aperture = ?, shutter_speed = ?,
-          iso = ?, orientation = ?, missing = 0, updated_at = ? WHERE id = ?
+          iso = ?, orientation = ?, rating = ?, missing = 0, updated_at = ? WHERE id = ?
       `).run(
         input.contentHash, input.width, input.height, input.format, input.capturedAt ?? null,
         input.cameraMake ?? null, input.cameraModel ?? null, input.lens ?? null, input.focalLength ?? null,
-        input.aperture ?? null, input.shutterSpeed ?? null, input.iso ?? null, input.orientation, now, assetId
+        input.aperture ?? null, input.shutterSpeed ?? null, input.iso ?? null, input.orientation, normalizeRating(input.rating), now, assetId
       )
     } else {
       this.db.prepare(`
         UPDATE media_assets SET width = ?, height = ?, format = ?, captured_at = ?, camera_make = ?,
           camera_model = ?, lens = ?, focal_length = ?, aperture = ?, shutter_speed = ?, iso = ?,
-          orientation = ?, missing = 0, updated_at = ? WHERE id = ?
+          orientation = ?, rating = MAX(rating, ?), missing = 0, updated_at = ? WHERE id = ?
       `).run(
         input.width, input.height, input.format, input.capturedAt ?? null, input.cameraMake ?? null,
         input.cameraModel ?? null, input.lens ?? null, input.focalLength ?? null, input.aperture ?? null,
-        input.shutterSpeed ?? null, input.iso ?? null, input.orientation, now, assetId
+        input.shutterSpeed ?? null, input.iso ?? null, input.orientation, normalizeRating(input.rating), now, assetId
       )
     }
 
@@ -410,18 +467,18 @@ export class AppDatabase {
 
     if (existingLocation) {
       this.db.prepare(`
-        UPDATE media_locations SET asset_id = ?, root_id = ?, relative_path = ?, size_bytes = ?, modified_at = ?,
-          status = 'available', preferred = ?, updated_at = ? WHERE id = ?
-      `).run(assetId, input.rootId, input.relativePath, input.sizeBytes, input.modifiedAt, preferred ? 1 : 0, now, locationId)
+        UPDATE media_locations SET asset_id = ?, root_id = ?, relative_path = ?, directory_path = ?, size_bytes = ?, modified_at = ?,
+          metadata_version = ?, status = 'available', preferred = ?, updated_at = ? WHERE id = ?
+      `).run(assetId, input.rootId, input.relativePath, directoryPath, input.sizeBytes, input.modifiedAt, normalizeMetadataVersion(input.metadataVersion), preferred ? 1 : 0, now, locationId)
     } else {
       this.db.prepare(`
         INSERT INTO media_locations(
-          id, asset_id, root_id, absolute_path, relative_path, size_bytes, modified_at,
-          status, preferred, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'available', ?, ?, ?)
+          id, asset_id, root_id, absolute_path, relative_path, directory_path, size_bytes, modified_at,
+          metadata_version, status, preferred, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', ?, ?, ?)
       `).run(
-        locationId, assetId, input.rootId, input.absolutePath, input.relativePath, input.sizeBytes,
-        input.modifiedAt, preferred ? 1 : 0, now, now
+        locationId, assetId, input.rootId, input.absolutePath, input.relativePath, directoryPath, input.sizeBytes,
+        input.modifiedAt, normalizeMetadataVersion(input.metadataVersion), preferred ? 1 : 0, now, now
       )
     }
 
@@ -456,7 +513,8 @@ export class AppDatabase {
       sizeBytes: asNumber(row.size_bytes),
       modifiedAt: asNumber(row.modified_at),
       status: asString(row.status) === 'missing' ? 'missing' : 'available',
-      preferred: Boolean(row.preferred)
+      preferred: Boolean(row.preferred),
+      metadataVersion: asNumber(row.metadata_version)
     }))
   }
 
@@ -519,7 +577,11 @@ export class AppDatabase {
     this.db.prepare(`
       INSERT OR IGNORE INTO album_items(album_id, asset_id, position, created_at) VALUES (?, ?, ?, ?)
     `).run(albumId, assetId, asNumber(row.next_position), now)
-    this.db.prepare('UPDATE albums SET updated_at = ? WHERE id = ?').run(now, albumId)
+    this.db.prepare(`
+      UPDATE albums
+      SET cover_asset_id = COALESCE(cover_asset_id, ?), updated_at = ?
+      WHERE id = ?
+    `).run(assetId, now, albumId)
   }
 
   listAlbumAssets(albumId: string): Array<{ assetId: string; position: number }> {
@@ -556,6 +618,19 @@ export class AppDatabase {
       createdAt: asNumber(row.created_at),
       updatedAt: asNumber(row.updated_at)
     }))
+  }
+
+  /** 每套作品用第一页的第一张图片当封面。 */
+  listWorkCovers(albumId: string): Array<{ workId: string; assetId: string | null }> {
+    const rows = this.db.prepare(`
+      SELECT w.id AS work_id,
+        (SELECT l.asset_id FROM pages p
+          JOIN layers l ON l.page_id = p.id
+         WHERE p.work_id = w.id AND l.type = 'image' AND l.asset_id IS NOT NULL
+         ORDER BY p.position, l.z_index LIMIT 1) AS asset_id
+      FROM works w WHERE w.album_id = ?
+    `).all(albumId) as Row[]
+    return rows.map((row) => ({ workId: asString(row.work_id), assetId: asNullableString(row.asset_id) }))
   }
 
   createPage(workId: string, position: number, background: string): Page {
@@ -616,6 +691,20 @@ export class AppDatabase {
     }))
   }
 
+  listFolders(): FolderSummary[] {
+    const rows = this.db.prepare(`
+      SELECT directory_path, COUNT(DISTINCT asset_id) AS asset_count
+      FROM media_locations
+      WHERE status = 'available' AND directory_path != ''
+      GROUP BY directory_path
+      ORDER BY directory_path COLLATE NOCASE
+    `).all() as Row[]
+    return rows.map((row) => {
+      const path = asString(row.directory_path)
+      return { path, name: path.split(/[\\/]/).filter(Boolean).pop() || path, assetCount: asNumber(row.asset_count) }
+    })
+  }
+
   markRootLocationsMissing(rootId: string): void {
     const now = Date.now()
     this.db.prepare("UPDATE media_locations SET status = 'missing', updated_at = ? WHERE root_id = ?").run(now, rootId)
@@ -632,16 +721,13 @@ export class AppDatabase {
     const params: Array<string | number> = []
 
     if (filters.text?.trim()) {
-      clauses.push(`(
-        EXISTS (
-          SELECT 1 FROM media_locations l
-          WHERE l.asset_id = a.id
-            AND (l.absolute_path LIKE ? OR l.relative_path LIKE ?)
-        )
-        OR a.camera_model LIKE ? OR a.lens LIKE ?
+      clauses.push(`EXISTS (
+        SELECT 1 FROM media_locations l
+        WHERE l.asset_id = a.id
+          AND (l.absolute_path LIKE ? OR l.relative_path LIKE ?)
       )`)
       const term = `%${filters.text.trim()}%`
-      params.push(term, term, term, term)
+      params.push(term, term)
     }
     if (filters.capturedFrom) {
       clauses.push('a.captured_at >= ?')
@@ -655,13 +741,14 @@ export class AppDatabase {
       clauses.push('a.orientation = ?')
       params.push(filters.orientation)
     }
-    if (filters.cameraModel) {
-      clauses.push('a.camera_model LIKE ?')
-      params.push(`%${filters.cameraModel}%`)
+    if (filters.cameraModel?.trim()) {
+      const terms = expandCameraSearch(filters.cameraModel.trim())
+      clauses.push(`(${terms.map(() => "(LOWER(COALESCE(a.camera_make, '')) LIKE ? OR LOWER(COALESCE(a.camera_model, '')) LIKE ? OR LOWER(COALESCE(a.camera_make, '') || ' ' || COALESCE(a.camera_model, '')) LIKE ?)").join(' OR ')})`)
+      for (const term of terms) { const pattern = `%${term.toLowerCase()}%`; params.push(pattern, pattern, pattern) }
     }
-    if (filters.lens) {
-      clauses.push('a.lens LIKE ?')
-      params.push(`%${filters.lens}%`)
+    if (filters.lens?.trim()) {
+      clauses.push("LOWER(COALESCE(a.lens, '')) LIKE ?")
+      params.push(`%${filters.lens.trim().toLowerCase()}%`)
     }
     if (filters.isoMin != null) {
       clauses.push('a.iso >= ?')
@@ -671,6 +758,14 @@ export class AppDatabase {
       clauses.push('a.iso <= ?')
       params.push(filters.isoMax)
     }
+    if (filters.ratingMin != null) {
+      clauses.push('a.rating >= ?')
+      params.push(normalizeRating(filters.ratingMin))
+    }
+    if (filters.ratingMax != null) {
+      clauses.push('a.rating <= ?')
+      params.push(normalizeRating(filters.ratingMax))
+    }
     if (filters.favorite != null) {
       clauses.push('a.favorite = ?')
       params.push(filters.favorite ? 1 : 0)
@@ -679,22 +774,69 @@ export class AppDatabase {
       clauses.push('EXISTS (SELECT 1 FROM album_items ai WHERE ai.album_id = ? AND ai.asset_id = a.id)')
       params.push(filters.albumId)
     }
+    if (filters.rootIds?.length) {
+      const placeholders = filters.rootIds.map(() => '?').join(', ')
+      clauses.push(`EXISTS (
+        SELECT 1 FROM media_locations folder_filter
+        WHERE folder_filter.asset_id = a.id
+          AND folder_filter.status = 'available'
+          AND folder_filter.root_id IN (${placeholders})
+      )`)
+      params.push(...filters.rootIds)
+    }
+    if (filters.folderPaths?.length) {
+      // 选父目录时把它下面的子目录照片一起带出来，所以是前缀匹配而不只是相等。
+      const conditions: string[] = []
+      for (const folderPath of filters.folderPaths) {
+        const normalized = folderPath.replace(/[\\/]+$/, '')
+        conditions.push('directory_filter.directory_path = ?')
+        params.push(normalized)
+        conditions.push("directory_filter.directory_path LIKE ? ESCAPE '\\'")
+        // 目录 + 分隔符 + 任意后缀，这样 D:\LR\a 不会匹配到 D:\LR\ab。
+        params.push(`${escapeLikePattern(normalized)}\\\\%`)
+        conditions.push("directory_filter.directory_path LIKE ? ESCAPE '\\'")
+        params.push(`${escapeLikePattern(normalized)}/%`)
+      }
+      clauses.push(`EXISTS (
+        SELECT 1 FROM media_locations directory_filter
+        WHERE directory_filter.asset_id = a.id
+          AND directory_filter.status = 'available'
+          AND (${conditions.join(' OR ')})
+      )`)
+    }
 
     const where = clauses.join(' AND ')
+    const filenameOrder = "LOWER(COALESCE(primary_path, ''))"
+    const orderBy = {
+      captured_desc: `CASE WHEN a.captured_at IS NULL OR a.captured_at = '' THEN 1 ELSE 0 END, a.captured_at DESC, a.created_at DESC, ${filenameOrder} ASC`,
+      captured_asc: `CASE WHEN a.captured_at IS NULL OR a.captured_at = '' THEN 1 ELSE 0 END, a.captured_at ASC, a.created_at ASC, ${filenameOrder} ASC`,
+      added_desc: `a.created_at DESC, CASE WHEN a.captured_at IS NULL OR a.captured_at = '' THEN 1 ELSE 0 END, a.captured_at DESC, ${filenameOrder} ASC`,
+      added_asc: `a.created_at ASC, CASE WHEN a.captured_at IS NULL OR a.captured_at = '' THEN 1 ELSE 0 END, a.captured_at ASC, ${filenameOrder} ASC`,
+      filename_asc: `${filenameOrder} ASC`,
+      filename_desc: `${filenameOrder} DESC`,
+      rating_desc: `a.rating DESC, CASE WHEN a.captured_at IS NULL OR a.captured_at = '' THEN 1 ELSE 0 END, a.captured_at DESC, a.created_at DESC, ${filenameOrder} ASC`
+    }[filters.sort ?? 'captured_desc']
     const totalRow = this.db.prepare(`SELECT COUNT(*) AS count FROM media_assets a WHERE ${where}`).get(...params) as Row
     const rows = this.db.prepare(`
       SELECT a.*,
-        (
-          SELECT absolute_path FROM media_locations l
-          WHERE l.asset_id = a.id AND l.status = 'available'
-          ORDER BY preferred DESC, absolute_path LIMIT 1
+        COALESCE(
+          (SELECT absolute_path FROM media_locations l WHERE l.asset_id = a.id AND l.status = 'available' ORDER BY preferred DESC, absolute_path LIMIT 1),
+          (SELECT absolute_path FROM media_locations l WHERE l.asset_id = a.id ORDER BY preferred DESC, absolute_path LIMIT 1)
         ) AS primary_path,
+        COALESCE(
+          (SELECT root_id FROM media_locations l WHERE l.asset_id = a.id AND l.status = 'available' ORDER BY preferred DESC, absolute_path LIMIT 1),
+          (SELECT root_id FROM media_locations l WHERE l.asset_id = a.id ORDER BY preferred DESC, absolute_path LIMIT 1)
+        ) AS primary_root_id,
+        COALESCE(
+          (SELECT directory_path FROM media_locations l WHERE l.asset_id = a.id AND l.status = 'available' ORDER BY preferred DESC, absolute_path LIMIT 1),
+          (SELECT directory_path FROM media_locations l WHERE l.asset_id = a.id ORDER BY preferred DESC, absolute_path LIMIT 1)
+        ) AS primary_directory_path,
         (
           SELECT COUNT(*) FROM media_locations l WHERE l.asset_id = a.id
         ) AS location_count
       FROM media_assets a
       WHERE ${where}
-      ORDER BY COALESCE(a.captured_at, '') DESC, a.created_at DESC
+      ORDER BY ${orderBy}
       LIMIT ? OFFSET ?
     `).all(...params, filters.limit, filters.offset) as Row[]
 
@@ -703,6 +845,7 @@ export class AppDatabase {
       items: rows.map((row) => ({
         id: asString(row.id),
         contentHash: asString(row.content_hash),
+        addedAt: asNumber(row.created_at),
         width: asNumber(row.width),
         height: asNumber(row.height),
         format: asString(row.format),
@@ -715,9 +858,12 @@ export class AppDatabase {
         shutterSpeed: asNullableString(row.shutter_speed),
         iso: row.iso == null ? null : asNumber(row.iso),
         orientation: asString(row.orientation) as Orientation,
+        rating: asNumber(row.rating),
         favorite: Boolean(row.favorite),
         missing: Boolean(row.missing),
         primaryPath: asNullableString(row.primary_path),
+        primaryRootId: asNullableString(row.primary_root_id),
+      primaryDirectoryPath: asNullableString(row.primary_directory_path),
         locationCount: asNumber(row.location_count)
       }))
     }
@@ -756,6 +902,11 @@ export class AppDatabase {
     `).run(Date.now(), assetId)
   }
 
+  /** 让某个文件位置在下次扫描时重读元数据（不重新哈希）。 */
+  markLocationMetadataStale(locationId: string): void {
+    this.db.prepare('UPDATE media_locations SET metadata_version = 0 WHERE id = ?').run(locationId)
+  }
+
   getStats(): { assets: number; duplicateGroups: number; missing: number; roots: number } {
     const assets = this.db.prepare(`
       SELECT COUNT(*) AS count FROM media_assets a
@@ -778,10 +929,25 @@ export class AppDatabase {
           WHERE l.asset_id = a.id AND l.status = 'available'
           ORDER BY preferred DESC, absolute_path LIMIT 1
         ) AS primary_path,
+        (
+          SELECT root_id FROM media_locations l
+          WHERE l.asset_id = a.id AND l.status = 'available'
+          ORDER BY preferred DESC, absolute_path LIMIT 1
+        ) AS primary_root_id,
+        (
+          SELECT directory_path FROM media_locations l
+          WHERE l.asset_id = a.id AND l.status = 'available'
+          ORDER BY preferred DESC, absolute_path LIMIT 1
+        ) AS primary_directory_path,
         (SELECT COUNT(*) FROM media_locations l WHERE l.asset_id = a.id) AS location_count
       FROM media_assets a WHERE a.id = ?
     `).get(assetId) as Row | undefined
     return row ? this.mapAssetSummary(row) : null
+  }
+
+  getAssetContentHash(assetId: string): string | null {
+    const row = this.db.prepare('SELECT content_hash FROM media_assets WHERE id = ?').get(assetId) as Row | undefined
+    return row ? asString(row.content_hash) : null
   }
 
   getPreferredLocation(assetId: string): MediaLocation | null {
@@ -798,6 +964,29 @@ export class AppDatabase {
     return row ? this.mapMediaLocation(row) : null
   }
 
+  getLocationByPath(absolutePath: string): MediaLocation | null {
+    const row = this.db.prepare('SELECT * FROM media_locations WHERE absolute_path = ?').get(absolutePath) as Row | undefined
+    return row ? this.mapMediaLocation(row) : null
+  }
+
+  markLocationsAvailable(locations: Array<{ id: string; assetId: string }>): void {
+    if (locations.length === 0) return
+    const updateLocation = this.db.prepare("UPDATE media_locations SET status = 'available', updated_at = ? WHERE id = ?")
+    const updateAsset = this.db.prepare('UPDATE media_assets SET missing = 0, updated_at = ? WHERE id = ?')
+    const now = Date.now()
+    this.db.exec('BEGIN')
+    try {
+      for (const location of locations) {
+        updateLocation.run(now, location.id)
+        updateAsset.run(now, location.assetId)
+      }
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+  }
+
   setPreferredLocation(assetId: string, locationId: string): void {
     const location = this.db.prepare('SELECT id FROM media_locations WHERE id = ? AND asset_id = ?').get(locationId, assetId) as Row | undefined
     if (!location) throw new Error('照片位置不存在')
@@ -811,7 +1000,15 @@ export class AppDatabase {
 
   removeAssetFromAlbum(albumId: string, assetId: string): void {
     this.db.prepare('DELETE FROM album_items WHERE album_id = ? AND asset_id = ?').run(albumId, assetId)
-    this.db.prepare('UPDATE albums SET updated_at = ? WHERE id = ?').run(Date.now(), albumId)
+    this.db.prepare(`
+      UPDATE albums
+      SET cover_asset_id = CASE
+        WHEN cover_asset_id = ? THEN (SELECT asset_id FROM album_items WHERE album_id = ? ORDER BY position LIMIT 1)
+        ELSE cover_asset_id
+      END,
+      updated_at = ?
+      WHERE id = ?
+    `).run(assetId, albumId, Date.now(), albumId)
   }
 
   reorderAlbumAssets(albumId: string, assetIds: string[]): void {
@@ -828,6 +1025,8 @@ export class AppDatabase {
   }
 
   setAlbumCover(albumId: string, assetId: string): void {
+    const item = this.db.prepare('SELECT 1 FROM album_items WHERE album_id = ? AND asset_id = ?').get(albumId, assetId)
+    if (!item) throw new Error('照片不属于这个相册')
     this.db.prepare('UPDATE albums SET cover_asset_id = ?, updated_at = ? WHERE id = ?').run(assetId, Date.now(), albumId)
   }
 
@@ -901,9 +1100,39 @@ export class AppDatabase {
     )
   }
 
+  reorderLayers(pageId: string, layerIds: string[], action: LayerOrderAction): Layer[] {
+    const layers = this.listLayers(pageId)
+    if (layers.length === 0) throw new Error('页面没有可排序的图层')
+    const selected = new Set(layerIds)
+    if (layerIds.length === 0 || layerIds.some((id) => !layers.some((layer) => layer.id === id))) {
+      throw new Error('选择的图层不属于当前页面')
+    }
+    const ordered = arrangeLayerOrder(layers, selected, action)
+    const now = Date.now()
+    const update = this.db.prepare('UPDATE layers SET z_index = ?, updated_at = ? WHERE id = ?')
+    this.db.exec('BEGIN')
+    try {
+      ordered.forEach((layer, index) => update.run(index + 1, now, layer.id))
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+    return ordered.map((layer, index) => ({ ...layer, zIndex: index + 1 }))
+  }
+
+  replaceImageLayerAsset(layerId: string, assetId: string): void {
+    const layer = this.db.prepare("SELECT type FROM layers WHERE id = ?").get(layerId) as Row | undefined
+    if (!layer) throw new Error('图层不存在')
+    if (asString(layer.type) !== 'image') throw new Error('只有图片图层可以更换图片')
+    const asset = this.db.prepare('SELECT id FROM media_assets WHERE id = ?').get(assetId) as Row | undefined
+    if (!asset) throw new Error('照片不存在')
+    this.db.prepare('UPDATE layers SET asset_id = ?, updated_at = ? WHERE id = ?').run(assetId, Date.now(), layerId)
+  }
   updateTextLayer(layerId: string, text: string, style: Record<string, unknown>): void {
     const row = this.db.prepare('SELECT * FROM layers WHERE id = ?').get(layerId) as Row | undefined
     if (!row) throw new Error('文字图层不存在')
+    if (asString(row.type) !== 'text') throw new Error('只有文字图层可以编辑文字')
     const currentStyle = JSON.parse(asString(row.style_json)) as Record<string, unknown>
     this.db.prepare('UPDATE layers SET text_content = ?, style_json = ?, updated_at = ? WHERE id = ?').run(
       text, JSON.stringify({ ...currentStyle, ...style }), Date.now(), layerId
@@ -912,6 +1141,13 @@ export class AppDatabase {
 
   deleteLayer(layerId: string): void {
     this.db.prepare('DELETE FROM layers WHERE id = ?').run(layerId)
+  }
+
+  updatePage(pageId: string, input: Pick<Page, 'background'>): void {
+    const row = this.db.prepare('SELECT work_id FROM pages WHERE id = ?').get(pageId) as Row | undefined
+    if (!row) throw new Error('页面不存在')
+    this.db.prepare('UPDATE pages SET background = ? WHERE id = ?').run(input.background, pageId)
+    this.db.prepare('UPDATE works SET updated_at = ? WHERE id = ?').run(Date.now(), asString(row.work_id))
   }
 
   deletePage(pageId: string): void {
@@ -1029,6 +1265,7 @@ export class AppDatabase {
     return {
       id: asString(row.id),
       contentHash: asString(row.content_hash),
+      addedAt: asNumber(row.created_at),
       width: asNumber(row.width),
       height: asNumber(row.height),
       format: asString(row.format),
@@ -1041,9 +1278,12 @@ export class AppDatabase {
       shutterSpeed: asNullableString(row.shutter_speed),
       iso: row.iso == null ? null : asNumber(row.iso),
       orientation: asString(row.orientation) as Orientation,
+      rating: asNumber(row.rating),
       favorite: Boolean(row.favorite),
       missing: Boolean(row.missing),
       primaryPath: asNullableString(row.primary_path),
+      primaryRootId: asNullableString(row.primary_root_id),
+      primaryDirectoryPath: asNullableString(row.primary_directory_path),
       locationCount: asNumber(row.location_count)
     }
   }
@@ -1058,7 +1298,8 @@ export class AppDatabase {
       sizeBytes: asNumber(row.size_bytes),
       modifiedAt: asNumber(row.modified_at),
       status: asString(row.status) === 'missing' ? 'missing' : 'available',
-      preferred: Boolean(row.preferred)
+      preferred: Boolean(row.preferred),
+      metadataVersion: asNumber(row.metadata_version)
     }
   }
 
@@ -1100,4 +1341,41 @@ export class AppDatabase {
       createdAt: asNumber(row.created_at)
     }
   }
+}
+
+function arrangeLayerOrder(layers: Layer[], selected: Set<string>, action: LayerOrderAction): Layer[] {
+  if (action === 'top') return [...layers.filter((layer) => !selected.has(layer.id)), ...layers.filter((layer) => selected.has(layer.id))]
+  if (action === 'bottom') return [...layers.filter((layer) => selected.has(layer.id)), ...layers.filter((layer) => !selected.has(layer.id))]
+  const ordered = [...layers]
+  if (action === 'up') {
+    for (let index = ordered.length - 2; index >= 0; index -= 1) {
+      if (selected.has(ordered[index].id) && !selected.has(ordered[index + 1].id)) {
+        [ordered[index], ordered[index + 1]] = [ordered[index + 1], ordered[index]]
+      }
+    }
+  } else {
+    for (let index = 1; index < ordered.length; index += 1) {
+      if (selected.has(ordered[index].id) && !selected.has(ordered[index - 1].id)) {
+        [ordered[index], ordered[index - 1]] = [ordered[index - 1], ordered[index]]
+      }
+    }
+  }
+  return ordered
+}
+
+function expandCameraSearch(value: string): string[] {
+  const normalized = value.trim().toLowerCase()
+  const aliases: Record<string, string[]> = {
+    '尼康': ['nikon'], '佳能': ['canon'], '索尼': ['sony'], '富士': ['fujifilm', 'fuji'], '松下': ['panasonic', 'lumix'],
+    '徕卡': ['leica'], '奥林巴斯': ['olympus'], '宾得': ['pentax'], '适马': ['sigma'], '哈苏': ['hasselblad']
+  }
+  const englishAliases: Record<string, string> = Object.fromEntries(Object.entries(aliases).flatMap(([chinese, values]) => values.map((english) => [english, chinese])))
+  const terms = [normalized]
+  for (const [chinese, values] of Object.entries(aliases)) {
+    if (normalized.includes(chinese) || values.some((english) => normalized.includes(english))) terms.push(chinese, ...values)
+  }
+  for (const [english, chinese] of Object.entries(englishAliases)) {
+    if (normalized.includes(english)) terms.push(chinese, english)
+  }
+  return [...new Set(terms.filter(Boolean))]
 }

@@ -65,9 +65,34 @@ describe('work document persistence', () => {
     const document = db.getWorkDocument(workId)
     expect(document?.pages[0].layers.map((layer) => layer.id)).toEqual([imageLayer.id, textLayer.id])
 
+    db.updatePage(pageId, { background: '#111111' })
+    expect(db.listPages(workId)[0].background).toBe('#111111')
+    db.updateLayer(imageLayer.id, { x: 0.05, y: 0.04, width: 0.9, height: 0.5, rotation: 5 })
     db.updateLayer(imageLayer.id, { x: 0.05, y: 0.04, width: 0.9, height: 0.5, rotation: 5 })
     expect(db.getWorkDocument(workId)?.pages[0].layers[0]).toMatchObject({ x: 0.05, y: 0.04, rotation: 5 })
+    db.updateTextLayer(textLayer.id, '新的标题', { fontSize: 72, lineHeight: 1.5 })
+    expect(db.listLayers(pageId).find((layer) => layer.id === textLayer.id)).toMatchObject({ text: '新的标题', style: { fontSize: 72, lineHeight: 1.5 } })
 
+    const movedFirst = db.reorderLayers(pageId, [textLayer.id], 'bottom')
+    expect(movedFirst.map((layer) => layer.id)).toEqual([textLayer.id, imageLayer.id])
+    const movedTop = db.reorderLayers(pageId, [textLayer.id], 'top')
+    expect(movedTop.map((layer) => layer.id)).toEqual([imageLayer.id, textLayer.id])
+
+    const replacementRoot = db.createSourceRoot('C:\\photos-replace')
+    const replacementAsset = db.upsertMediaLocation({
+      rootId: replacementRoot.id,
+      absolutePath: 'C:\\photos-replace\\replacement.jpg',
+      relativePath: 'replacement.jpg',
+      contentHash: 'replacement-photo',
+      sizeBytes: 100,
+      modifiedAt: 1,
+      width: 1200,
+      height: 800,
+      format: 'jpeg',
+      orientation: 'landscape'
+    }).assetId
+    db.replaceImageLayerAsset(imageLayer.id, replacementAsset)
+    expect(db.getWorkDocument(workId)?.pages[0].layers[0].assetId).toBe(replacementAsset)
     db.deleteLayer(textLayer.id)
     expect(db.getWorkDocument(workId)?.pages[0].layers).toHaveLength(1)
     expect(db.listWorks(document!.work.albumId)).toHaveLength(1)

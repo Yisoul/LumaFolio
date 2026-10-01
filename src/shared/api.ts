@@ -1,6 +1,6 @@
 import type {
-  Album, AppSettings, DuplicateGroup, ExportOptions, ExportResult, Layer, MediaAssetSummary,
-  MediaLocation, OutputMode, Page, ScanProgress, SearchFilters, SourceRemovalMode, SourceRemovalResult, SourceRoot, SourceRootImpact, TemplateDefinition, Work, WorkDocument
+  Album, AppSettings, CustomFont, DuplicateGroup, ExportOptions, FolderSummary, ExportResult, Layer, MediaAssetSummary,
+  ImageFit, LayerOrderAction, MediaLocation, OutputMode, Page, ScanProgress, SearchFilters, SourceRemovalMode, SourceRemovalResult, SourceRoot, SourceRootImpact, TemplateDefinition, Work, WorkDocument
 } from './types'
 
 export interface AppStats {
@@ -18,7 +18,7 @@ export interface ImageLayerRequest {
   height: number
   rotation: number
   zIndex: number
-  fit: 'cover' | 'contain'
+  fit: ImageFit
   radius: number
 }
 
@@ -58,6 +58,10 @@ export interface AlbumStudioApi {
     chooseExportDirectory(): Promise<string | null>
     scanAll(): Promise<void>
     backupNow(): Promise<string>
+    readClipboardText(): Promise<string>
+    writeClipboardText(text: string): Promise<void>
+    setFullscreen(enabled: boolean): Promise<void>
+    onFullscreenChange(callback: (enabled: boolean) => void): () => void
     onScanProgress(callback: (progress: ScanProgress) => void): () => void
   }
   library: {
@@ -70,6 +74,7 @@ export interface AlbumStudioApi {
     search(filters: SearchFilters): Promise<{ items: MediaAssetSummary[]; total: number }>
     get(assetId: string): Promise<MediaAssetSummary | null>
     listDuplicates(): Promise<DuplicateGroup[]>
+    listFolders(): Promise<FolderSummary[]>
     listLocations(assetId: string): Promise<MediaLocation[]>
     setPreferredLocation(assetId: string, locationId: string): Promise<void>
     setFavorite(assetId: string, favorite: boolean): Promise<void>
@@ -89,17 +94,26 @@ export interface AlbumStudioApi {
   }
   works: {
     list(albumId: string): Promise<Work[]>
+    listCovers(albumId: string): Promise<Array<{ workId: string; assetId: string | null }>>
     create(request: CreateWorkRequest): Promise<WorkDocument>
     get(workId: string): Promise<WorkDocument>
     update(workId: string, changes: Partial<Pick<Work, 'name' | 'outputMode' | 'canvasWidth' | 'canvasHeight' | 'background'>>): Promise<Work>
     remove(workId: string): Promise<void>
     createPage(workId: string, position: number, background: string): Promise<Page>
+    updatePage(pageId: string, changes: Pick<Page, 'background'>): Promise<void>
     deletePage(pageId: string): Promise<void>
     createImageLayer(pageId: string, input: ImageLayerRequest): Promise<Layer>
     createTextLayer(pageId: string, input: TextLayerRequest): Promise<Layer>
     updateLayer(layerId: string, changes: Record<string, unknown>): Promise<void>
+    reorderLayers(pageId: string, layerIds: string[], action: LayerOrderAction): Promise<Layer[]>
+    replaceImageLayerAsset(layerId: string, assetId: string): Promise<void>
     updateTextLayer(layerId: string, text: string, style: Record<string, unknown>): Promise<void>
     deleteLayer(layerId: string): Promise<void>
+  }
+  fonts: {
+    list(): Promise<CustomFont[]>
+    import(): Promise<CustomFont[]>
+    remove(id: string): Promise<void>
   }
   templates: {
     list(): Promise<TemplateDefinition[]>

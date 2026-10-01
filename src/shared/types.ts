@@ -1,5 +1,8 @@
 export type Orientation = 'landscape' | 'portrait' | 'square'
 export type SourceRemovalMode = 'disable' | 'library' | 'all'
+export type SearchSort = 'captured_desc' | 'captured_asc' | 'added_desc' | 'added_asc' | 'filename_asc' | 'filename_desc' | 'rating_desc'
+export type LayerOrderAction = 'top' | 'up' | 'down' | 'bottom'
+export type ImageFit = 'cover' | 'contain' | 'stretch'
 
 export interface SourceRootImpact {
   assetCount: number
@@ -34,11 +37,14 @@ export interface MediaLocation {
   modifiedAt: number
   status: 'available' | 'missing'
   preferred: boolean
+  metadataVersion: number
 }
 
 export interface MediaAssetSummary {
   id: string
   contentHash: string
+  /** 加入图库的时间戳。 */
+  addedAt: number
   width: number
   height: number
   format: string
@@ -51,9 +57,12 @@ export interface MediaAssetSummary {
   shutterSpeed: string | null
   iso: number | null
   orientation: Orientation
+  rating: number
   favorite: boolean
   missing: boolean
   primaryPath: string | null
+  primaryRootId: string | null
+  primaryDirectoryPath: string | null
   locationCount: number
 }
 
@@ -66,10 +75,21 @@ export interface SearchFilters {
   lens?: string
   isoMin?: number
   isoMax?: number
+  ratingMin?: number
+  ratingMax?: number
   favorite?: boolean
   albumId?: string
+  rootIds?: string[]
+  folderPaths?: string[]
+  sort?: SearchSort
   limit: number
   offset: number
+}
+
+export interface FolderSummary {
+  path: string
+  name: string
+  assetCount: number
 }
 
 export interface DuplicateGroup {
@@ -172,9 +192,28 @@ export interface ExportResult {
   pages: number
 }
 
+export type AppTheme = 'dark' | 'light'
+
+export interface CustomFont {
+  id: string
+  name: string
+  family: string
+}
+
 export interface AppSettings {
   thumbnailCacheLimitGb: number
   autoWatch: boolean
+  theme: AppTheme
+  /** 整体界面缩放比例，1 表示 100%。 */
+  uiScale: number
+  /** 对齐行网格的目标行高，单位 px。 */
+  thumbnailSize: number
+  /** 左侧文件夹栏宽度，单位 px。 */
+  treeWidth: number
+  /** 右侧信息栏宽度，单位 px。 */
+  inspectorWidth: number
+  /** 最左侧导航栏宽度，单位 px。 */
+  navWidth: number
 }
 
 export interface ScanSummary {

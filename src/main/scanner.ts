@@ -10,6 +10,9 @@ import type { AppDatabase, MediaLocationInput, Orientation, SourceRoot } from '.
 const SUPPORTED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png'])
 const IGNORED_DIRECTORIES = new Set(['.git', 'node_modules', '$recycle.bin', 'system volume information'])
 
+/** 元数据结构版本：升级后存量位置会重读一次元数据（不重新哈希）。 */
+export const CURRENT_METADATA_VERSION = 1
+
 export interface ScanProgress {
   rootId: string
   phase: 'scanning' | 'reading' | 'complete' | 'error' | 'error'
@@ -26,7 +29,12 @@ export interface ScanResult {
   errors: string[]
 }
 
-interface ExifRecord {
+export interface RatingMetadata {
+  Rating?: unknown
+  RatingPercent?: unknown
+}
+
+interface ExifRecord extends RatingMetadata {
   DateTimeOriginal?: Date
   CreateDate?: Date
   Make?: string
@@ -36,6 +44,27 @@ interface ExifRecord {
   FNumber?: number
   ExposureTime?: number
   ISO?: number
+}
+
+/**
+ * 相机和修图软件写星级的位置不统一：Windows/部分相机写 EXIF `Rating`，
+ * Lightroom/Bridge 写 XMP `xmp:Rating`（exifr 会合并到同一个 `Rating` 键）。
+ * 两边都有值时取较大的那个，`RatingPercent` 作为兜底。
+ */
+export function normalizeRating(exif: RatingMetadata): number {
+  const candidates: number[] = []
+  const rating = toFiniteNumber(exif.Rating)
+  if (rating != null) candidates.push(rating)
+  const percent = toFiniteNumber(exif.RatingPercent)
+  if (percent != null) candidates.push(percent / 20)
+  if (candidates.length === 0) return 0
+  return Math.max(0, Math.min(5, Math.round(Math.max(...candidates))))
+}
+
+function toFiniteNumber(value: unknown): number | null {
+  if (value == null || value === '') return null
+  const numeric = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(numeric) ? numeric : null
 }
 
 export async function hashFile(path: string): Promise<string> {
@@ -60,6 +89,7 @@ export class LibraryScanner {
     onProgress?: (progress: ScanProgress) => void
   ): Promise<ScanResult> {
     const errors: string[] = []
+    const unchangedLocations: Array<{ id: string; assetId: string }> = []
     let discovered = 0
     let processed = 0
     let indexed = 0
@@ -79,8 +109,9 @@ export class LibraryScanner {
 
     await mapLimit(files, Math.max(1, Math.min(4, (await import('node:os')).cpus().length - 1)), async (filePath) => {
       try {
-        await this.indexFile(root, filePath)
-        indexed += 1
+        const unchanged = await this.indexFile(root, filePath)
+        if (unchanged) unchangedLocations.push(unchanged)
+        else indexed += 1
       } catch (error) {
         errors.push(`${filePath}: ${error instanceof Error ? error.message : String(error)}`)
       } finally {
@@ -89,6 +120,7 @@ export class LibraryScanner {
       }
     })
 
+    this.db.markLocationsAvailable(unchangedLocations)
     onProgress?.({ rootId: root.id, phase: 'complete', discovered, processed, indexed, errors: errors.length })
     return { discovered, indexed, errors }
   }
@@ -176,14 +208,24 @@ export class LibraryScanner {
     return files
   }
 
-  private async indexFile(root: SourceRoot, filePath: string): Promise<void> {
-    if (this.db.isPathIgnored(filePath)) return
+  private async indexFile(root: SourceRoot, filePath: string): Promise<{ id: string; assetId: string } | null> {
+    if (this.db.isPathIgnored(filePath)) return null
     const fileStat = await stat(filePath)
+    const existing = this.db.getLocationByPath(filePath)
+    const unchangedFile = Boolean(existing
+      && existing.rootId === root.id
+      && existing.sizeBytes === fileStat.size
+      && Math.abs(existing.modifiedAt - fileStat.mtimeMs) <= 1)
+    if (unchangedFile && existing?.metadataVersion === CURRENT_METADATA_VERSION) {
+      return { id: existing.id, assetId: existing.assetId }
+    }
     const metadata = await sharp(filePath, { failOn: 'none' }).metadata()
     if (!metadata.width || !metadata.height) throw new Error('无法读取图片尺寸')
 
     const exif = await this.readExif(filePath)
-    const contentHash = await hashFile(filePath)
+    const contentHash = unchangedFile && existing
+      ? this.db.getAssetContentHash(existing.assetId) ?? await hashFile(filePath)
+      : await hashFile(filePath)
     const orientation = normalizeOrientation(metadata.orientation, metadata.width, metadata.height)
     const input: MediaLocationInput = {
       rootId: root.id,
@@ -192,6 +234,7 @@ export class LibraryScanner {
       contentHash,
       sizeBytes: fileStat.size,
       modifiedAt: fileStat.mtimeMs,
+      metadataVersion: CURRENT_METADATA_VERSION,
       width: metadata.width,
       height: metadata.height,
       format: metadata.format ?? extname(filePath).slice(1).toLowerCase(),
@@ -203,9 +246,11 @@ export class LibraryScanner {
       aperture: finiteOrNull(exif.FNumber),
       shutterSpeed: formatExposure(exif.ExposureTime),
       iso: finiteOrNull(exif.ISO),
+      rating: normalizeRating(exif),
       orientation
     }
     this.db.upsertMediaLocation(input)
+    return null
   }
 
   private async readExif(path: string): Promise<ExifRecord> {
@@ -213,6 +258,7 @@ export class LibraryScanner {
       const parsed = await exifr.parse(path, {
         tiff: true,
         exif: true,
+        xmp: true,
         gps: false,
         interop: false,
         ifd1: false

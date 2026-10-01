@@ -1,8 +1,9 @@
-import { dialog, ipcMain, shell, type BrowserWindow } from 'electron'
+import { clipboard, dialog, ipcMain, shell, type BrowserWindow, type OpenDialogOptions } from 'electron'
 import { z } from 'zod'
 import { BUILT_IN_TEMPLATES } from '../shared/templates'
-import type { AppSettings, OutputMode, SearchFilters, SourceRemovalMode, TemplateDefinition } from '../shared/types'
+import type { AppSettings, LayerOrderAction, OutputMode, Page, SearchFilters, SourceRemovalMode, TemplateDefinition } from '../shared/types'
 import type { BackupService } from './backup'
+import type { FontService } from './fonts'
 import type { AppDatabase } from './database'
 import type { WorkExporter } from './exporter'
 import type { LibraryScanner } from './scanner'
@@ -16,7 +17,9 @@ interface IpcContext {
   backups: BackupService
   settings: SettingsService
   thumbnails: ThumbnailService
+  fonts: FontService
   getWindow: () => BrowserWindow | null
+  setUiScale: (value: number) => void
 }
 
 const searchSchema = z.object({
@@ -28,8 +31,13 @@ const searchSchema = z.object({
   lens: z.string().optional(),
   isoMin: z.number().optional(),
   isoMax: z.number().optional(),
+  ratingMin: z.number().int().min(0).max(5).optional(),
+  ratingMax: z.number().int().min(0).max(5).optional(),
   favorite: z.boolean().optional(),
   albumId: z.string().optional(),
+  rootIds: z.array(z.string().uuid()).optional(),
+  folderPaths: z.array(z.string()).optional(),
+  sort: z.enum(['captured_desc', 'captured_asc', 'added_desc', 'added_asc', 'filename_asc', 'filename_desc', 'rating_desc']).optional(),
   limit: z.number().int().min(1).max(500).default(120),
   offset: z.number().int().min(0).default(0)
 })
@@ -45,6 +53,7 @@ export function registerIpcHandlers(context: IpcContext): () => void {
   handle('app:get-settings', () => context.settings.get())
   handle('app:save-settings', async (_event, value: AppSettings) => {
     const saved = await context.settings.save(value)
+    context.setUiScale(saved.uiScale)
     await configureWatchers(context)
     return saved
   })
@@ -66,6 +75,21 @@ export function registerIpcHandlers(context: IpcContext): () => void {
     await scanAll(context)
   })
   handle('app:backup-now', () => context.backups.createBackup())
+  handle('fonts:list', () => context.fonts.list())
+  handle('fonts:import', async () => {
+    const owner = context.getWindow()
+    const options: OpenDialogOptions = { title: '导入字体', properties: ['openFile', 'multiSelections'], filters: [{ name: '字体文件', extensions: ['ttf', 'otf', 'woff', 'woff2'] }] }
+    const result = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options)
+    return result.canceled ? [] : context.fonts.import(result.filePaths)
+  })
+  handle('fonts:remove', (_event, id: string) => context.fonts.remove(z.string().uuid().parse(id)))
+
+  handle('app:read-clipboard', () => clipboard.readText())
+  handle('app:write-clipboard', (_event, text: string) => clipboard.writeText(z.string().parse(text)))
+  handle('app:set-fullscreen', (_event, enabled: boolean) => {
+    const owner = context.getWindow()
+    if (owner && !owner.isDestroyed()) owner.setFullScreen(Boolean(enabled))
+  })
 
   handle('library:list-roots', () => context.db.listSourceRoots())
   handle('library:add-roots', async (_event, paths: string[]) => {
@@ -91,6 +115,7 @@ export function registerIpcHandlers(context: IpcContext): () => void {
   })
   handle('library:search', (_event, filters: SearchFilters) => context.db.searchAssets(searchSchema.parse(filters)))
   handle('library:get-asset', (_event, assetId: string) => context.db.getAsset(assetId))
+  handle('library:list-folders', () => context.db.listFolders())
   handle('library:list-duplicates', () => context.db.listDuplicateAssets())
   handle('library:list-locations', (_event, assetId: string) => context.db.listMediaLocations(z.string().uuid().parse(assetId)))
   handle('library:set-preferred-location', (_event, assetId: string, locationId: string) => {
@@ -128,6 +153,7 @@ export function registerIpcHandlers(context: IpcContext): () => void {
   handle('albums:set-cover', (_event, albumId: string, assetId: string) => context.db.setAlbumCover(albumId, assetId))
 
   handle('works:list', (_event, albumId: string) => context.db.listWorks(albumId))
+  handle('works:list-covers', (_event, albumId: string) => context.db.listWorkCovers(albumId))
   handle('works:create', (_event, request: {
     albumId: string
     name: string
@@ -144,10 +170,13 @@ export function registerIpcHandlers(context: IpcContext): () => void {
   })
   handle('works:remove', (_event, workId: string) => context.db.deleteWork(workId))
   handle('works:create-page', (_event, workId: string, position: number, background: string) => context.db.createPage(workId, position, background))
+  handle('works:update-page', (_event, pageId: string, changes: Pick<Page, 'background'>) => context.db.updatePage(z.string().uuid().parse(pageId), { background: z.string().regex(/^#[0-9a-f]{6}$/i).parse(changes.background) }))
   handle('works:delete-page', (_event, pageId: string) => context.db.deletePage(pageId))
   handle('works:create-image-layer', (_event, pageId: string, input: Record<string, unknown>) => context.db.createImageLayer(pageId, input as unknown as Parameters<AppDatabase['createImageLayer']>[1]))
   handle('works:create-text-layer', (_event, pageId: string, input: Record<string, unknown>) => context.db.createTextLayer(pageId, input as unknown as Parameters<AppDatabase['createTextLayer']>[1]))
   handle('works:update-layer', (_event, layerId: string, changes: Record<string, unknown>) => context.db.updateLayer(layerId, changes as Parameters<AppDatabase['updateLayer']>[1]))
+  handle('works:reorder-layers', (_event, pageId: string, layerIds: string[], action: LayerOrderAction) => context.db.reorderLayers(z.string().uuid().parse(pageId), z.array(z.string().uuid()).min(1).parse(layerIds), z.enum(['top', 'up', 'down', 'bottom']).parse(action)))
+  handle('works:replace-image-layer-asset', (_event, layerId: string, assetId: string) => context.db.replaceImageLayerAsset(layerId, assetId))
   handle('works:update-text-layer', (_event, layerId: string, text: string, style: Record<string, unknown>) => context.db.updateTextLayer(layerId, text, style))
   handle('works:delete-layer', (_event, layerId: string) => context.db.deleteLayer(layerId))
 

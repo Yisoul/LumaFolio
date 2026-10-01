@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AlbumStudioApi } from '../shared/api'
-import type { AppSettings, ExportOptions, ScanProgress, SearchFilters, SourceRemovalMode, TemplateDefinition } from '../shared/types'
+import type { AppSettings, ExportOptions, LayerOrderAction, Page, ScanProgress, SearchFilters, SourceRemovalMode, TemplateDefinition } from '../shared/types'
 
 const api: AlbumStudioApi = {
   app: {
@@ -11,6 +11,14 @@ const api: AlbumStudioApi = {
     chooseExportDirectory: () => ipcRenderer.invoke('app:choose-export-directory'),
     scanAll: () => ipcRenderer.invoke('app:scan-all'),
     backupNow: () => ipcRenderer.invoke('app:backup-now'),
+    readClipboardText: () => ipcRenderer.invoke('app:read-clipboard'),
+    writeClipboardText: (text: string) => ipcRenderer.invoke('app:write-clipboard', text),
+    setFullscreen: (enabled: boolean) => ipcRenderer.invoke('app:set-fullscreen', enabled),
+    onFullscreenChange: (callback: (enabled: boolean) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, enabled: boolean): void => callback(enabled)
+      ipcRenderer.on('app:fullscreen-changed', listener)
+      return () => ipcRenderer.removeListener('app:fullscreen-changed', listener)
+    },
     onScanProgress: (callback: (progress: ScanProgress) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, progress: ScanProgress): void => callback(progress)
       ipcRenderer.on('app:scan-progress', listener)
@@ -27,6 +35,7 @@ const api: AlbumStudioApi = {
     search: (filters: SearchFilters) => ipcRenderer.invoke('library:search', filters),
     get: (assetId: string) => ipcRenderer.invoke('library:get-asset', assetId),
     listDuplicates: () => ipcRenderer.invoke('library:list-duplicates'),
+    listFolders: () => ipcRenderer.invoke('library:list-folders'),
     listLocations: (assetId: string) => ipcRenderer.invoke('library:list-locations', assetId),
     setPreferredLocation: (assetId: string, locationId: string) => ipcRenderer.invoke('library:set-preferred-location', assetId, locationId),
     setFavorite: (assetId: string, favorite: boolean) => ipcRenderer.invoke('library:set-favorite', assetId, favorite),
@@ -46,17 +55,26 @@ const api: AlbumStudioApi = {
   },
   works: {
     list: (albumId: string) => ipcRenderer.invoke('works:list', albumId),
+    listCovers: (albumId: string) => ipcRenderer.invoke('works:list-covers', albumId),
     create: (request) => ipcRenderer.invoke('works:create', request),
     get: (workId: string) => ipcRenderer.invoke('works:get', workId),
     update: (workId: string, changes) => ipcRenderer.invoke('works:update', workId, changes),
     remove: (workId: string) => ipcRenderer.invoke('works:remove', workId),
     createPage: (workId: string, position: number, background: string) => ipcRenderer.invoke('works:create-page', workId, position, background),
+    updatePage: (pageId: string, changes: Pick<Page, 'background'>) => ipcRenderer.invoke('works:update-page', pageId, changes),
     deletePage: (pageId: string) => ipcRenderer.invoke('works:delete-page', pageId),
     createImageLayer: (pageId: string, input) => ipcRenderer.invoke('works:create-image-layer', pageId, input),
     createTextLayer: (pageId: string, input) => ipcRenderer.invoke('works:create-text-layer', pageId, input),
     updateLayer: (layerId: string, changes: Record<string, unknown>) => ipcRenderer.invoke('works:update-layer', layerId, changes),
+    reorderLayers: (pageId: string, layerIds: string[], action: LayerOrderAction) => ipcRenderer.invoke('works:reorder-layers', pageId, layerIds, action),
+    replaceImageLayerAsset: (layerId: string, assetId: string) => ipcRenderer.invoke('works:replace-image-layer-asset', layerId, assetId),
     updateTextLayer: (layerId: string, text: string, style: Record<string, unknown>) => ipcRenderer.invoke('works:update-text-layer', layerId, text, style),
     deleteLayer: (layerId: string) => ipcRenderer.invoke('works:delete-layer', layerId)
+  },
+  fonts: {
+    list: () => ipcRenderer.invoke('fonts:list'),
+    import: () => ipcRenderer.invoke('fonts:import'),
+    remove: (id: string) => ipcRenderer.invoke('fonts:remove', id)
   },
   templates: {
     list: () => ipcRenderer.invoke('templates:list'),
