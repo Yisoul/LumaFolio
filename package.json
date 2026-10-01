@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "package": "npm run build && electron-builder --win nsis"
+    "package": "npm run build && electron-builder --win nsis",
+    "package:dir": "npm run build && electron-builder --win --dir"
   },
   "dependencies": {
     "chokidar": "^5.0.0",

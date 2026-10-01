@@ -41,7 +41,7 @@ function stubApi(theme: 'dark' | 'light', assets: MediaAssetSummary[] = [], root
   const api = {
     app: {
       getStats: vi.fn(async () => ({ assets: 12, duplicateGroups: 1, missing: 0, roots: 1 })),
-      getSettings: vi.fn(async () => ({ thumbnailCacheLimitGb: 10, autoWatch: true, theme })),
+      getSettings: vi.fn(async () => ({ thumbnailCacheLimitGb: 10, autoWatch: true, theme, uiScale: 1 })),
       saveSettings: vi.fn(async (settings: unknown) => settings),
       chooseFolders: vi.fn(async () => []),
       chooseExportDirectory: vi.fn(async () => null),
@@ -178,5 +178,32 @@ describe('App shell', () => {
     expect(api.library.ignoreAsset).not.toHaveBeenCalled()
     expect(api.library.deleteOriginal).not.toHaveBeenCalled()
     expect(container.querySelectorAll('.photo-card')).toHaveLength(1)
+  })
+
+  it('changes the interface scale from the settings page', async () => {
+    const api = stubApi('dark')
+    render(<App />)
+    await waitFor(() => expect(screen.getByRole('heading', { name: '图库' })).toBeTruthy())
+
+    fireEvent.keyDown(window, { key: '4', ctrlKey: true })
+    await waitFor(() => expect(screen.getByText('界面缩放')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: '125%' }))
+
+    await waitFor(() => expect(api.app.saveSettings).toHaveBeenLastCalledWith(expect.objectContaining({ uiScale: 1.25 })))
+  })
+
+  it('steps the interface scale with Ctrl shortcuts', async () => {
+    const api = stubApi('dark')
+    render(<App />)
+    await waitFor(() => expect(screen.getByRole('heading', { name: '图库' })).toBeTruthy())
+
+    fireEvent.keyDown(window, { key: '=', ctrlKey: true })
+    await waitFor(() => expect(api.app.saveSettings).toHaveBeenLastCalledWith(expect.objectContaining({ uiScale: 1.1 })))
+
+    fireEvent.keyDown(window, { key: '-', ctrlKey: true })
+    await waitFor(() => expect(api.app.saveSettings).toHaveBeenLastCalledWith(expect.objectContaining({ uiScale: 1 })))
+
+    fireEvent.keyDown(window, { key: '0', ctrlKey: true })
+    await waitFor(() => expect(api.app.saveSettings).toHaveBeenLastCalledWith(expect.objectContaining({ uiScale: 1 })))
   })
 })

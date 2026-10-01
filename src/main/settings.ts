@@ -5,9 +5,12 @@ import type { AppSettings } from '../shared/types'
 const DEFAULT_SETTINGS: AppSettings = {
   thumbnailCacheLimitGb: 10,
   autoWatch: true,
-  theme: 'dark'
+  theme: 'dark',
+  uiScale: 1
 }
 const THEMES = new Set<AppSettings['theme']>(['dark', 'light'])
+const MIN_UI_SCALE = 0.8
+const MAX_UI_SCALE = 1.5
 
 export class SettingsService {
   constructor(private readonly filePath: string) {}
@@ -18,7 +21,8 @@ export class SettingsService {
       return {
         thumbnailCacheLimitGb: clamp(parsed.thumbnailCacheLimitGb ?? DEFAULT_SETTINGS.thumbnailCacheLimitGb, 1, 100),
         autoWatch: parsed.autoWatch ?? DEFAULT_SETTINGS.autoWatch,
-        theme: parsed.theme && THEMES.has(parsed.theme) ? parsed.theme : DEFAULT_SETTINGS.theme
+        theme: parsed.theme && THEMES.has(parsed.theme) ? parsed.theme : DEFAULT_SETTINGS.theme,
+        uiScale: clamp(parsed.uiScale ?? DEFAULT_SETTINGS.uiScale, MIN_UI_SCALE, MAX_UI_SCALE)
       }
     } catch {
       return { ...DEFAULT_SETTINGS }
@@ -29,7 +33,8 @@ export class SettingsService {
     const normalized: AppSettings = {
       thumbnailCacheLimitGb: clamp(settings.thumbnailCacheLimitGb, 1, 100),
       autoWatch: Boolean(settings.autoWatch),
-      theme: THEMES.has(settings.theme) ? settings.theme : DEFAULT_SETTINGS.theme
+      theme: THEMES.has(settings.theme) ? settings.theme : DEFAULT_SETTINGS.theme,
+      uiScale: clamp(settings.uiScale, MIN_UI_SCALE, MAX_UI_SCALE)
     }
     await mkdir(dirname(this.filePath), { recursive: true })
     await writeFile(this.filePath, JSON.stringify(normalized, null, 2), 'utf8')

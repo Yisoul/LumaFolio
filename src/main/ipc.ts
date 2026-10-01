@@ -19,6 +19,7 @@ interface IpcContext {
   thumbnails: ThumbnailService
   fonts: FontService
   getWindow: () => BrowserWindow | null
+  setUiScale: (value: number) => void
 }
 
 const searchSchema = z.object({
@@ -52,6 +53,7 @@ export function registerIpcHandlers(context: IpcContext): () => void {
   handle('app:get-settings', () => context.settings.get())
   handle('app:save-settings', async (_event, value: AppSettings) => {
     const saved = await context.settings.save(value)
+    context.setUiScale(saved.uiScale)
     await configureWatchers(context)
     return saved
   })

@@ -20,6 +20,13 @@ let mainWindow: BrowserWindow | null = null
 let database: AppDatabase | null = null
 let scanner: LibraryScanner | null = null
 let removeIpcHandlers: (() => void) | null = null
+/** 当前界面缩放比例，新建窗口（例如 macOS 激活）时沿用它。 */
+let currentUiScale = 1
+
+function applyZoom(window: BrowserWindow | null, scale: number): void {
+  if (!window || window.isDestroyed()) return
+  window.webContents.setZoomFactor(scale)
+}
 
 function migrateLegacyAppDataSafe(): void {
   try {
@@ -49,6 +56,11 @@ function createWindow(): BrowserWindow {
       sandbox: true
     }
   })
+
+  // 导航前先设一次，并在加载完成后补一次：缩放比例是按来源记录的，
+  // 页面加载后需要重新应用才能保证首帧就是目标比例。
+  applyZoom(window, currentUiScale)
+  window.webContents.on('did-finish-load', () => applyZoom(window, currentUiScale))
 
   const headless = process.env.LUMA_FOLIO_HEADLESS === '1' || process.env.ALBUM_STUDIO_HEADLESS === '1'
   window.once('ready-to-show', () => { if (!headless) window.show() })
@@ -110,6 +122,7 @@ async function initialize(): Promise<void> {
     }
   })
 
+  currentUiScale = (await settings.get()).uiScale
   mainWindow = createWindow()
   removeIpcHandlers = registerIpcHandlers({
     db: database,
@@ -119,7 +132,11 @@ async function initialize(): Promise<void> {
     settings,
     thumbnails,
     fonts,
-    getWindow: () => mainWindow
+    getWindow: () => mainWindow,
+    setUiScale: (value: number) => {
+      currentUiScale = value
+      applyZoom(mainWindow, value)
+    }
   })
 
   void backups.createBackup().catch(() => undefined)

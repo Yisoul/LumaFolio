@@ -202,6 +202,8 @@ export interface AppSettings {
   thumbnailCacheLimitGb: number
   autoWatch: boolean
   theme: AppTheme
+  /** 整体界面缩放比例，1 表示 100%。 */
+  uiScale: number
 }
 
 export interface ScanSummary {

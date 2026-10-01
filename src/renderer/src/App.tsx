@@ -16,6 +16,9 @@ import { useShortcut } from './shortcuts'
 
 type NavKey = 'library' | 'duplicates' | 'albums' | 'settings'
 
+/** 界面缩放档位，和设置页、Ctrl+= / Ctrl+- 共用同一组值。 */
+const UI_SCALE_PRESETS = [0.9, 1, 1.1, 1.25, 1.5]
+
 export default function App() {
   const [nav, setNav] = useState<NavKey>('library')
   const [stats, setStats] = useState<AppStats>({ assets: 0, duplicateGroups: 0, missing: 0, roots: 0 })
@@ -29,6 +32,7 @@ export default function App() {
   const [toast, setToast] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
   const [albumDialogOpen, setAlbumDialogOpen] = useState(false)
   const [theme, setTheme] = useState<AppTheme>('dark')
+  const [uiScale, setUiScale] = useState(1)
   const [helpOpen, setHelpOpen] = useState(false)
   const [searchFocusRequest, setSearchFocusRequest] = useState(false)
 
@@ -41,7 +45,11 @@ export default function App() {
     await Promise.all([refreshStats(), refreshRoots(), refreshAlbums(), refreshTemplates()])
   }, [refreshAlbums, refreshRoots, refreshStats, refreshTemplates])
 
-  useEffect(() => { void window.albumApi.app.getSettings().then((settings) => setTheme(settings.theme)).catch(() => undefined) }, [])
+  useEffect(() => {
+    void window.albumApi.app.getSettings()
+      .then((settings) => { setTheme(settings.theme); setUiScale(settings.uiScale) })
+      .catch(() => undefined)
+  }, [])
   useEffect(() => { document.documentElement.dataset.theme = theme }, [theme])
   // 桌面端屏蔽 Ctrl+滚轮的整页缩放，这个手势留给全屏瀑布流调图片大小。
   useEffect(() => {
@@ -123,6 +131,28 @@ export default function App() {
   })
   useShortcut({ id: 'global.help', keys: ['?', 'ctrl+/'], scope: 'global', label: '快捷键帮助', when: () => !helpOpen, run: () => setHelpOpen(true) })
 
+  const changeUiScale = useCallback(async (next: number): Promise<void> => {
+    try {
+      const current = await window.albumApi.app.getSettings()
+      const saved = await window.albumApi.app.saveSettings({ ...current, uiScale: next })
+      setUiScale(saved.uiScale)
+      setToast({ kind: 'info', text: `界面缩放 ${Math.round(saved.uiScale * 100)}%` })
+    } catch (error) {
+      setToast({ kind: 'error', text: errorMessage(error) })
+    }
+  }, [])
+
+  const stepUiScale = (delta: number): void => {
+    const currentIndex = Math.max(0, UI_SCALE_PRESETS.findIndex((value) => Math.abs(value - uiScale) < 0.001))
+    const nextIndex = Math.min(UI_SCALE_PRESETS.length - 1, Math.max(0, currentIndex + delta))
+    if (nextIndex === currentIndex) return
+    void changeUiScale(UI_SCALE_PRESETS[nextIndex])
+  }
+
+  useShortcut({ id: 'global.scale-in', keys: ['ctrl+plus', 'ctrl+equal'], scope: 'global', label: '放大界面', run: () => stepUiScale(1) })
+  useShortcut({ id: 'global.scale-out', keys: ['ctrl+minus'], scope: 'global', label: '缩小界面', run: () => stepUiScale(-1) })
+  useShortcut({ id: 'global.scale-reset', keys: ['ctrl+0'], scope: 'global', label: '界面缩放回到 100%', run: () => void changeUiScale(1) })
+
   if (editingWorkId) {
     return (
       <>
@@ -156,7 +186,7 @@ export default function App() {
         {nav === 'library' && <LibraryPage roots={roots} albums={albums} onAddRoots={addRoots} onScanAll={scanAll} onRefreshStats={refreshStats} onToast={setToast} focusSearch={searchFocusRequest} onSearchFocused={() => setSearchFocusRequest(false)} />}
         {nav === 'duplicates' && <DuplicatesPage onToast={setToast} onRefresh={refreshStats} />}
         {nav === 'albums' && <AlbumsPage albums={albums} selectedAlbumId={selectedAlbumId} onSelectAlbum={setSelectedAlbumId} onRefreshAlbums={refreshAlbums} templates={templates} onOpenWork={setEditingWorkId} onToast={setToast} onCreateAlbum={() => setAlbumDialogOpen(true)} />}
-        {nav === 'settings' && <SettingsPage roots={roots} onAddRoots={addRoots} onRemoveRoot={removeRoot} onSetRootEnabled={setRootEnabled} onScanAll={scanAll} onRefreshStats={refreshStats} onToast={setToast} />}
+        {nav === 'settings' && <SettingsPage roots={roots} onAddRoots={addRoots} onRemoveRoot={removeRoot} onSetRootEnabled={setRootEnabled} onScanAll={scanAll} onRefreshStats={refreshStats} onToast={setToast} uiScale={uiScale} onUiScaleChange={(value) => void changeUiScale(value)} />}
       </main>
       {toast && <Toast toast={toast} onClose={() => setToast(null)} />}
       {albumDialogOpen && <TextInputDialog title="新建相册" label="相册名称" confirmLabel="创建相册" onClose={() => setAlbumDialogOpen(false)} onConfirm={createAlbum} />}
@@ -661,8 +691,10 @@ function SettingsPage(props: {
   onScanAll: () => Promise<void>
   onRefreshStats: () => Promise<void>
   onToast: (toast: { kind: 'info' | 'error'; text: string }) => void
+  uiScale: number
+  onUiScaleChange: (value: number) => void
 }) {
-  const [settings, setSettings] = useState<AppSettings>({ thumbnailCacheLimitGb: 10, autoWatch: true, theme: 'dark' })
+  const [settings, setSettings] = useState<AppSettings>({ thumbnailCacheLimitGb: 10, autoWatch: true, theme: 'dark', uiScale: 1 })
   const [removeTarget, setRemoveTarget] = useState<SourceRoot | null>(null)
   const [impact, setImpact] = useState<SourceRootImpact | null>(null)
   useEffect(() => { void window.albumApi.app.getSettings().then(setSettings) }, [])
@@ -684,12 +716,16 @@ function SettingsPage(props: {
         <div className="source-list">{props.roots.map((root) => <div className={`settings-row source-row ${root.enabled ? '' : 'disabled'}`} key={root.id}><span title={root.path}><strong>{sourceName(root.path)}</strong><small>{root.path}</small></span><span className="settings-actions"><i className={`status-badge ${root.enabled ? '' : 'disabled'}`}>{root.enabled ? '已启用' : '已停用'}</i><button className="text-button" onClick={() => void toggleRoot(root)}>{root.enabled ? '停用' : '重新启用'}</button><button className="text-button danger" onClick={() => void openRemove(root)}>移除</button></span></div>)}</div>
       </section>
       <section className="settings-card">
-        <h2>界面主题</h2>
-        <p className="subtle">主题会立即应用，并保存在本机设置文件。</p>
+        <h2>外观</h2>
+        <p className="subtle">主题和界面缩放会立即应用，并保存在本机设置文件。</p>
         <div className="theme-grid">{([
           ['dark', '深色', '专注看图的深色工作区'],
           ['light', '浅色', '明亮清爽的浅色工作区']
         ] as Array<[AppTheme, string, string]>).map(([value, label, description]) => <button key={value} className={`theme-option theme-${value} ${settings.theme === value ? 'active' : ''}`} onClick={() => void save({ ...settings, theme: value })}><i /><span><strong>{label}</strong><small>{description}</small></span></button>)}</div>
+        <div className="settings-row">
+          <span><strong>界面缩放</strong><small>整体缩放所有界面元素，包括排版画布；快捷键 Ctrl+= / Ctrl+- / Ctrl+0</small></span>
+          <div className="segmented">{UI_SCALE_PRESETS.map((value) => <button key={value} className={Math.abs(props.uiScale - value) < 0.001 ? 'active' : ''} onClick={() => props.onUiScaleChange(value)}>{Math.round(value * 100)}%</button>)}</div>
+        </div>
       </section>
       <section className="settings-card">
         <h2>扫描与缓存</h2>
