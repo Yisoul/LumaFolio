@@ -30,7 +30,7 @@ LumaFolio（光影册）是 Windows 上的本地摄影图库与作品排版工�
 
 这个项目已经开源。代码、说明和后续安装包都可以在 GitHub 获取：
 
-**GitHub：** https://github.com/Yisoul/luma-folio
+**GitHub：** https://github.com/Yisoul/LumaFolio
 
 如果这个项目刚好解决了你的问题，欢迎点个 Star、提 Issue，或者直接提交 PR。
 
