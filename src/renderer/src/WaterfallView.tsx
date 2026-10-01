@@ -290,7 +290,7 @@ const WaterfallItem = memo(function WaterfallItem(props: {
     >
       {unavailable
         ? <div className="waterfall-placeholder" style={{ aspectRatio: ratio }}><span>▧</span><small>来源不可用</small></div>
-        : <img src={thumbnailUrl(props.asset.id, 640)} alt={fileName(props.asset.primaryPath)} loading="lazy" style={{ aspectRatio: ratio }} onError={() => setFailed(true)} />}
+        : <img src={thumbnailUrl(props.asset.id, 640)} alt={fileName(props.asset.primaryPath)} loading="lazy" decoding="async" style={{ aspectRatio: ratio }} onError={() => setFailed(true)} />}
       {props.asset.rating > 0 && <span className="waterfall-stars" title={`相机内评星 ${props.asset.rating} 星`}>{ratingStars(props.asset.rating)}</span>}
       {props.asset.favorite && <span className="waterfall-favorite" title="已收藏">★</span>}
       {props.marked && <span className="waterfall-mark-badge" title="已加入临时相册">{props.pending ? '…' : '✓'}</span>}

@@ -75,7 +75,8 @@ button { cursor: pointer; }
 img { display: block; max-width: 100%; }
 
 .app-shell { display: grid; grid-template-columns: 208px 1fr; height: 100%; background: var(--page-bg); }
-.app-shell.nav-collapsed { grid-template-columns: 0 minmax(0, 1fr); }
+/* 收起后侧栏 display:none、展开按钮是 fixed，网格只剩主内容一列。 */
+.app-shell.nav-collapsed { grid-template-columns: minmax(0, 1fr); }
 .app-shell.nav-collapsed .sidebar { display: none; }
 .nav-rail-toggle { position: fixed; top: 10px; left: 10px; z-index: 40; border-color: var(--line); background: var(--paper); box-shadow: var(--shadow); }
 .sidebar { display: flex; flex-direction: column; padding: 18px 12px 14px; border-right: 1px solid var(--line); color: var(--sidebar-text); background: var(--sidebar-bg); }
@@ -207,8 +208,9 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .work-card:hover { border-color: var(--muted); }
 .work-open { display: grid; gap: 4px; padding: 0; border: 0; color: inherit; background: transparent; text-align: left; }
 .work-delete { justify-self: start; padding: 3px 0; border: 0; color: var(--danger); background: transparent; font-size: 11px; }
-.work-preview { display: grid; height: 118px; place-items: center; border-radius: var(--radius-sm); color: var(--muted); background: var(--sand); font-size: 11px; }
-.work-preview img { width: 100%; height: 100%; object-fit: cover; border-radius: var(--radius-sm); }
+.work-preview { display: grid; height: 118px; overflow: hidden; place-items: center; border-radius: var(--radius-sm); color: var(--muted); background: var(--sand); font-size: 11px; }
+/* 网格项默认 min-height:auto，会被图片固有高度撑破，必须显式清零再靠 100% 撑满。 */
+.work-preview img { display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; object-fit: cover; border-radius: var(--radius-sm); }
 .work-card strong { font-size: 12px; font-weight: 500; }
 .work-card small { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 
@@ -461,7 +463,8 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .waterfall-tools .segmented button.active { color: #fff; background: var(--accent); }
 .waterfall-body { position: relative; min-height: 0; overflow: auto; padding: 14px 16px 28px; }
 .waterfall-grid { column-gap: 12px; }
-.waterfall-item { position: relative; display: block; width: 100%; margin: 0 0 8px; padding: 0; break-inside: avoid; content-visibility: auto; contain-intrinsic-size: 320px 240px; border: 1px solid transparent; border-radius: 2px; background: var(--sand); overflow: hidden; transition: border-color .14s ease; }
+/* 多列瀑布流里不能用 content-visibility：占位高度和真实高度不一致会让整列反复跳。 */
+.waterfall-item { position: relative; display: block; width: 100%; margin: 0 0 8px; padding: 0; break-inside: avoid; border: 1px solid transparent; border-radius: 2px; background: var(--sand); overflow: hidden; transition: border-color .14s ease; }
 .waterfall-item:hover { border-color: var(--line); }
 .waterfall-item.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .waterfall-item.marked { border-color: var(--accent); }
@@ -575,7 +578,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .tile.selected .tile-image { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .tile-image img { display: block; width: 100%; height: 100%; object-fit: cover; background: var(--image-bg); }
 .tile-placeholder { display: grid; height: 100%; place-items: center; color: var(--muted); font-size: 11px; }
-.tile-check { position: absolute; top: 6px; left: 6px; display: grid; width: 16px; height: 16px; place-items: center; border: 1px solid rgba(255,255,255,.75); border-radius: 3px; color: #fff; background: rgba(0,0,0,.35); opacity: 0; transition: opacity .14s ease-out; }
+.tile-check { position: absolute; top: 6px; left: 6px; display: grid; width: 18px; height: 18px; padding: 0; place-items: center; border: 1px solid rgba(255,255,255,.75); border-radius: 3px; color: #fff; background: rgba(0,0,0,.35); opacity: 0; transition: opacity .14s ease-out; }
 .tile:hover .tile-check, .tile.selected .tile-check { opacity: 1; }
 .tile.selected .tile-check { border-color: var(--accent); background: var(--accent); }
 .tile-favorite { position: absolute; top: 6px; right: 6px; color: var(--star); filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }

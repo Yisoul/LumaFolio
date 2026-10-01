@@ -92,7 +92,7 @@ function PhotoTile(props: {
         type="button"
         className="tile-image"
         style={{ height: `${props.height}px` }}
-        onClick={(event) => props.onActivate(props.asset, event.ctrlKey || event.metaKey)}
+        onClick={(event) => props.onActivate(props.asset, event.ctrlKey || event.metaKey || event.shiftKey)}
         onDoubleClick={() => props.onOpen(props.asset)}
         onContextMenu={(event) => { if (props.onContextMenu) { event.preventDefault(); props.onContextMenu(event, props.asset) } }}
         title={fileName(props.asset.primaryPath)}
@@ -106,9 +106,17 @@ function PhotoTile(props: {
             decoding="async"
             onError={() => setFailed(true)}
           />}
-        <span className="tile-check" aria-hidden="true">{props.selected ? <IconCheck size={12} /> : null}</span>
         {props.asset.favorite && <span className="tile-favorite" title="已收藏"><IconStar size={14} filled /></span>}
         {props.asset.locationCount > 1 && <span className="tile-badge">{props.asset.locationCount} 份副本</span>}
+      </button>
+      <button
+        type="button"
+        className="tile-check"
+        title="加入多选（也可按 Ctrl / Shift 点击图片）"
+        aria-label={props.selected ? '取消选择' : '加入多选'}
+        onClick={(event) => { event.stopPropagation(); props.onActivate(props.asset, true) }}
+      >
+        {props.selected ? <IconCheck size={12} /> : null}
       </button>
       <figcaption className="tile-caption">
         <span className="tile-name">{fileName(props.asset.primaryPath)}</span>

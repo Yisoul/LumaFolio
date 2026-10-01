@@ -374,6 +374,7 @@ function LibraryPage(props: {
       if (!additive) return new Set([asset.id])
       const next = new Set(current)
       if (next.has(asset.id)) next.delete(asset.id)
+      else next.add(asset.id)
       if (next.size === 0) next.add(asset.id)
       return next
     })
@@ -690,6 +691,7 @@ function AlbumDetail(props: {
       if (!additive) return new Set([asset.id])
       const next = new Set(current)
       if (next.has(asset.id)) next.delete(asset.id)
+      else next.add(asset.id)
       if (next.size === 0) next.add(asset.id)
       return next
     })

@@ -337,6 +337,24 @@ describe('App shell', () => {
     await waitFor(() => expect(container.querySelector('.app-shell')?.classList.contains('nav-collapsed')).toBe(false))
   })
 
+  it('multi selects photos with the tile checkbox', async () => {
+    stubApi('dark', [libraryAsset(1), libraryAsset(2), libraryAsset(3)], [{ id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }])
+    const { container } = render(<App />)
+
+    await waitFor(() => expect(container.querySelectorAll('.tile')).toHaveLength(3))
+    fireEvent.click(container.querySelectorAll('.tile-image')[0])
+    await waitFor(() => expect(container.querySelectorAll('.tile.selected')).toHaveLength(1))
+
+    // 点勾选框是"加入多选"，不会替换掉已有选择。
+    fireEvent.click(container.querySelectorAll('.tile-check')[1])
+    fireEvent.click(container.querySelectorAll('.tile-check')[2])
+    await waitFor(() => expect(container.querySelectorAll('.tile.selected')).toHaveLength(3))
+
+    // 再点一次取消这一张。
+    fireEvent.click(container.querySelectorAll('.tile-check')[2])
+    await waitFor(() => expect(container.querySelectorAll('.tile.selected')).toHaveLength(2))
+  })
+
   it('keeps captions out of the row height so tiles cannot overlap', async () => {
     stubApi('dark', [libraryAsset(1), libraryAsset(2)], [{ id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }])
     const { container } = render(<App />)

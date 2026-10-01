@@ -5,6 +5,10 @@ import type { AppDatabase } from './database'
 
 export class ThumbnailService {
   private readonly pending = new Map<string, Promise<string>>()
+  private active = 0
+  private readonly queue: Array<() => void> = []
+  /** 同时最多生成 4 张，避免快速滚动时几十张缩略图一起抢 CPU 造成卡顿。 */
+  private readonly maxConcurrent = 4
 
   constructor(
     private readonly db: AppDatabase,
@@ -68,9 +72,26 @@ export class ThumbnailService {
       // Cache miss.
     }
 
+    return this.withSlot(() => this.renderToCache(location.absolutePath, cachePath, safeSize, quality))
+  }
+
+  private async withSlot<T>(task: () => Promise<T>): Promise<T> {
+    if (this.active >= this.maxConcurrent) {
+      await new Promise<void>((resolve) => this.queue.push(resolve))
+    }
+    this.active += 1
+    try {
+      return await task()
+    } finally {
+      this.active -= 1
+      this.queue.shift()?.()
+    }
+  }
+
+  private async renderToCache(sourcePath: string, cachePath: string, safeSize: number, quality: number): Promise<string> {
     const temporaryPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`
     try {
-      await sharp(location.absolutePath, { failOn: 'none' })
+      await sharp(sourcePath, { failOn: 'none' })
         .rotate()
         .resize({ width: safeSize, height: safeSize, fit: 'inside', withoutEnlargement: true })
         .webp({ quality, effort: 4 })
