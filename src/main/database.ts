@@ -257,7 +257,6 @@ export class AppDatabase {
       CREATE INDEX IF NOT EXISTS idx_media_assets_camera ON media_assets(camera_model);
       CREATE INDEX IF NOT EXISTS idx_media_assets_lens ON media_assets(lens);
       CREATE INDEX IF NOT EXISTS idx_media_assets_iso ON media_assets(iso);
-      CREATE INDEX IF NOT EXISTS idx_media_assets_rating ON media_assets(rating);
 
       CREATE TABLE IF NOT EXISTS ignored_paths (
         path TEXT PRIMARY KEY,

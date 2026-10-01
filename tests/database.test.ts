@@ -1,3 +1,7 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { AppDatabase } from '../src/main/database'
 
@@ -11,6 +15,31 @@ describe('AppDatabase', () => {
 
   afterEach(() => {
     db.close()
+  })
+
+  it('upgrades a database created before the rating column existed', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'luma-folio-legacy-'))
+    const file = join(directory, 'library.sqlite')
+    try {
+      // 先用当前 schema 建库，再手工退回 v2 形态，模拟旧版本留下来的数据库。
+      const current = new AppDatabase(file)
+      current.migrate()
+      current.close()
+      const legacy = new DatabaseSync(file)
+      legacy.exec('DROP INDEX IF EXISTS idx_media_assets_rating')
+      legacy.exec('ALTER TABLE media_assets DROP COLUMN rating')
+      legacy.exec('ALTER TABLE media_locations DROP COLUMN metadata_version')
+      legacy.exec('DELETE FROM schema_migrations WHERE version = 3')
+      legacy.close()
+
+      const upgraded = new AppDatabase(file)
+      expect(() => upgraded.migrate()).not.toThrow()
+      const columns = upgraded.searchAssets({ limit: 1, offset: 0 })
+      expect(columns.items).toEqual([])
+      upgraded.close()
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 
   it('merges identical content into one asset with multiple file locations', () => {
