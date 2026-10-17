@@ -11,8 +11,11 @@ import { RAW_EXTENSIONS, extractRawPreview } from './raw'
 const SUPPORTED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', ...RAW_EXTENSIONS])
 const IGNORED_DIRECTORIES = new Set(['.git', 'node_modules', '$recycle.bin', 'system volume information'])
 
-/** 元数据结构版本：升级后存量位置会重读一次元数据（不重新哈希）。 */
-export const CURRENT_METADATA_VERSION = 1
+/**
+ * 元数据结构版本：升级后存量位置会重读一次元数据（不重新哈希）。
+ * v2：按 EXIF Orientation 交换宽高，竖拍照片的缩略图比例和瀑布流占位才正确。
+ */
+export const CURRENT_METADATA_VERSION = 2
 
 export interface ScanProgress {
   rootId: string
@@ -264,10 +267,16 @@ export class LibraryScanner {
     }
     const exif = await this.readExif(filePath)
     const image = await readImageInfo(filePath)
+    // 竖拍照片的像素是横的、靠 Orientation 标记旋转：库里的宽高要按显示方向存，
+    // 否则缩略图/瀑布流先按横图占位，等图片加载出来再变高，整列会跳一下。
+    const orientationValue = exif.Orientation ?? image.orientation
+    const rotated = Boolean(orientationValue && [5, 6, 7, 8].includes(orientationValue))
+    const width = rotated ? image.height : image.width
+    const height = rotated ? image.width : image.height
     const contentHash = unchangedFile && existing
       ? this.db.getAssetContentHash(existing.assetId) ?? await hashFile(filePath)
       : await hashFile(filePath)
-    const orientation = normalizeOrientation(exif.Orientation ?? image.orientation, image.width, image.height)
+    const orientation = normalizeOrientation(orientationValue, width, height)
     const input: MediaLocationInput = {
       rootId: root.id,
       absolutePath: filePath,
@@ -276,8 +285,8 @@ export class LibraryScanner {
       sizeBytes: fileStat.size,
       modifiedAt: fileStat.mtimeMs,
       metadataVersion: CURRENT_METADATA_VERSION,
-      width: image.width,
-      height: image.height,
+      width,
+      height,
       format: image.format,
       capturedAt: normalizeDate(exif.DateTimeOriginal ?? exif.CreateDate),
       cameraMake: exif.Make ?? null,
@@ -302,7 +311,9 @@ export class LibraryScanner {
         xmp: true,
         gps: false,
         interop: false,
-        ifd1: false
+        ifd1: false,
+        // Orientation 等枚举保留原始数字，避免拿到 "Rotate 90 CW" 这类翻译后的字符串。
+        translateValues: false
       })
       return (parsed ?? {}) as ExifRecord
     } catch {

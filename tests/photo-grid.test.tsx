@@ -116,4 +116,45 @@ describe('JustifiedPhotoGrid', () => {
       vi.useRealTimers()
     }
   })
+
+  it('stops the zoom preview when the size already hit the limit', async () => {
+    const onSizeChange = vi.fn()
+    const { container } = render(<div className="host">
+      <JustifiedPhotoGrid
+        photos={[asset('a'), asset('b')]}
+        targetHeight={120}
+        selectedIds={new Set()}
+        activeId={null}
+        onActivate={() => undefined}
+        onOpen={() => undefined}
+        onSizeChange={onSizeChange}
+      />
+    </div>)
+    const host = container.querySelector('.host') as HTMLElement
+    const grid = container.querySelector('.justified-grid') as HTMLElement
+
+    fireEvent.wheel(host, { deltaY: 120, ctrlKey: true })
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    // 已经是最小尺寸：继续往下滚不应该再把画面缩小。
+    expect(grid.style.transform).toBe('')
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(onSizeChange).not.toHaveBeenCalled()
+
+    cleanup()
+    const max = render(<div className="host">
+      <JustifiedPhotoGrid
+        photos={[asset('a'), asset('b')]}
+        targetHeight={360}
+        selectedIds={new Set()}
+        activeId={null}
+        onActivate={() => undefined}
+        onOpen={() => undefined}
+        onSizeChange={onSizeChange}
+      />
+    </div>)
+    const maxGrid = max.container.querySelector('.justified-grid') as HTMLElement
+    fireEvent.wheel(max.container.querySelector('.host') as HTMLElement, { deltaY: -120, ctrlKey: true })
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    expect(maxGrid.style.transform).toBe('')
+  })
 })

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { MediaAssetSummary } from '../../shared/types'
 import { computeJustifiedRows, layoutTilePositions, resolveContainerWidth, viewportSignature } from './grid'
 import { fileName, ratingStars, thumbnailUrl } from './helpers'
@@ -42,6 +42,8 @@ export default function JustifiedPhotoGrid(props: JustifiedPhotoGridProps) {
   const gridRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(0)
   const zoomRef = useRef({ scale: 1, frame: 0, idle: 0 })
+  /** 缩放提交后按高度比例还原滚动位置，避免整屏内容突然跳走。 */
+  const pendingScrollRef = useRef<{ top: number; height: number } | null>(null)
   const minSize = props.minSize ?? 120
   const maxSize = props.maxSize ?? 360
   // 手势期间父组件可能重渲染，这里用 ref 存最新值，监听只挂一次，避免提交被清理掉。
@@ -95,6 +97,19 @@ export default function JustifiedPhotoGrid(props: JustifiedPhotoGridProps) {
   ), [containerWidth, props.photos, props.targetHeight])
   const positions = useMemo(() => layoutTilePositions(layout.rows, 6, CAPTION_HEIGHT), [layout])
 
+  // 缩放落定后按高度比例还原滚动位置：同一张照片还在原来的相对位置，不会整屏跳走。
+  useLayoutEffect(() => {
+    const pending = pendingScrollRef.current
+    if (!pending) return
+    pendingScrollRef.current = null
+    const node = containerRef.current
+    const host = node?.parentElement
+    if (!node || !host || pending.height <= 0) return
+    const ratio = node.scrollHeight / pending.height
+    if (Math.abs(ratio - 1) < 0.001) return
+    host.scrollTop = Math.round(pending.top * ratio)
+  }, [positions.height])
+
   useEffect(() => {
     const node = gridRef.current
     if (!node) return
@@ -113,14 +128,23 @@ export default function JustifiedPhotoGrid(props: JustifiedPhotoGridProps) {
       node.style.willChange = ''
       if (Math.abs(scale - 1) < 0.001) return
       const { min, max } = boundsRef.current
-      sizeChangeRef.current?.(Math.max(min, Math.min(max, Math.round(targetHeightRef.current * scale))))
+      const next = Math.max(min, Math.min(max, Math.round(targetHeightRef.current * scale)))
+      if (next === targetHeightRef.current) return
+      const host = node.parentElement
+      if (host) pendingScrollRef.current = { top: host.scrollTop, height: node.scrollHeight }
+      sizeChangeRef.current?.(next)
     }
     const onWheel = (event: WheelEvent) => {
       if (!sizeChangeRef.current) return
       if (!event.ctrlKey && !event.metaKey) return
       event.preventDefault()
       const factor = event.deltaY > 0 ? 0.92 : 1.08
-      zoomRef.current.scale = Math.max(0.4, Math.min(2.5, zoomRef.current.scale * factor))
+      // 预览比例也要卡在设置允许的区间里：已经到最小/最大时继续滚轮，画面不再继续缩/放再弹回。
+      const { min, max } = boundsRef.current
+      const targetHeight = Math.max(1, targetHeightRef.current)
+      const minScale = Math.min(1, min / targetHeight)
+      const maxScale = Math.max(1, max / targetHeight)
+      zoomRef.current.scale = Math.max(minScale, Math.min(maxScale, zoomRef.current.scale * factor))
       node.style.willChange = 'transform'
       if (!zoomRef.current.frame) zoomRef.current.frame = window.requestAnimationFrame(paint)
       if (zoomRef.current.idle) window.clearTimeout(zoomRef.current.idle)

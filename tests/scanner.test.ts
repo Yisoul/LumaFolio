@@ -119,6 +119,20 @@ describe('LibraryScanner', () => {
     expect(db.getAsset(keepAsset.id)?.missing).toBe(false)
   })
 
+  it('stores portrait dimensions for photos rotated by EXIF orientation', async () => {
+    await sharp({ create: { width: 1200, height: 800, channels: 3, background: '#445566' } })
+      .withMetadata({ orientation: 6 })
+      .jpeg()
+      .toFile(join(rootDir, 'portrait.jpg'))
+    const source = db.createSourceRoot(rootDir)
+
+    await scanner.scanRoot(source)
+
+    const [asset] = db.searchAssets({ limit: 10, offset: 0 }).items
+    expect([asset.width, asset.height]).toEqual([800, 1200])
+    expect(asset.orientation).toBe('portrait')
+  })
+
   it('keeps album references when a unique original is overwritten with content that already exists', async () => {
     const firstPath = join(rootDir, 'first.jpg')
     const secondPath = join(rootDir, 'second.jpg')
