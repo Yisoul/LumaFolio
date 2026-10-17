@@ -4,13 +4,16 @@ import { computeJustifiedRows, resolveContainerWidth, viewportSignature } from '
 import { fileName, ratingStars, thumbnailUrl } from './helpers'
 import { IconCheck, IconStar } from './icons'
 
+export type PhotoSelectMode = 'replace' | 'toggle' | 'range'
+
 export interface JustifiedPhotoGridProps {
   photos: MediaAssetSummary[]
   /** 目标行高，来自设置里的缩略图尺寸。 */
   targetHeight: number
   selectedIds: Set<string>
   activeId: string | null
-  onActivate: (asset: MediaAssetSummary, additive: boolean) => void
+  /** replace = 单选，toggle = Ctrl 切换，range = Shift 范围选择。 */
+  onActivate: (asset: MediaAssetSummary, mode: PhotoSelectMode) => void
   onOpen: (asset: MediaAssetSummary) => void
   onContextMenu?: (event: React.MouseEvent, asset: MediaAssetSummary) => void
   /** 鼠标移到某张照片上时回调，用来联动高亮左侧文件夹。 */
@@ -37,7 +40,7 @@ export default function JustifiedPhotoGrid(props: JustifiedPhotoGridProps) {
   const [containerWidth, setContainerWidth] = useState(0)
   const zoomRef = useRef({ scale: 1, frame: 0, idle: 0 })
   const minSize = props.minSize ?? 120
-  const maxSize = props.maxSize ?? 520
+  const maxSize = props.maxSize ?? 360
   // 手势期间父组件可能重渲染，这里用 ref 存最新值，监听只挂一次，避免提交被清理掉。
   const sizeChangeRef = useRef(props.onSizeChange)
   const targetHeightRef = useRef(props.targetHeight)
@@ -166,7 +169,7 @@ function PhotoTile(props: {
   height: number
   selected: boolean
   active: boolean
-  onActivate: (asset: MediaAssetSummary, additive: boolean) => void
+  onActivate: (asset: MediaAssetSummary, mode: PhotoSelectMode) => void
   onOpen: (asset: MediaAssetSummary) => void
   onContextMenu?: (event: React.MouseEvent, asset: MediaAssetSummary) => void
   onHover?: (asset: MediaAssetSummary | null) => void
@@ -186,7 +189,7 @@ function PhotoTile(props: {
         type="button"
         className="tile-image"
         style={{ height: `${props.height}px` }}
-        onClick={(event) => props.onActivate(props.asset, event.ctrlKey || event.metaKey || event.shiftKey)}
+        onClick={(event) => props.onActivate(props.asset, event.shiftKey ? 'range' : event.ctrlKey || event.metaKey ? 'toggle' : 'replace')}
         onDoubleClick={() => props.onOpen(props.asset)}
         onContextMenu={(event) => { if (props.onContextMenu) { event.preventDefault(); props.onContextMenu(event, props.asset) } }}
         title={fileName(props.asset.primaryPath)}
@@ -208,7 +211,7 @@ function PhotoTile(props: {
         className="tile-check"
         title="加入多选（也可按 Ctrl / Shift 点击图片）"
         aria-label={props.selected ? '取消选择' : '加入多选'}
-        onClick={(event) => { event.stopPropagation(); props.onActivate(props.asset, true) }}
+        onClick={(event) => { event.stopPropagation(); props.onActivate(props.asset, 'toggle') }}
       >
         {props.selected ? <IconCheck size={12} /> : null}
       </button>

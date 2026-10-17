@@ -15,6 +15,31 @@ function normalizePath(path: string): string {
   return path.replace(/[\\/]+$/, '').replace(/\//g, '\\')
 }
 
+/** child 是否就是 parent 或位于 parent 之下（Windows 路径不区分大小写）。 */
+export function isPathInsideFolder(child: string, parent: string): boolean {
+  const base = normalizePath(parent).toLowerCase()
+  if (!base) return false
+  const target = normalizePath(child).toLowerCase()
+  return target === base || target.startsWith(`${base}\\`)
+}
+
+/** 找出某个目录所属的来源目录；目录本身是来源目录时也返回它。 */
+export function findRootForPath(path: string, roots: SourceRoot[]): SourceRoot | null {
+  const matches = roots.filter((root) => isPathInsideFolder(path, root.path))
+  if (matches.length === 0) return null
+  // 嵌套来源目录时取最深的那个，保证移除的是用户看到的那个根。
+  return matches.sort((left, right) => right.path.length - left.path.length)[0]
+}
+
+export function isSameFolder(left: string, right: string): boolean {
+  return normalizePath(left).toLowerCase() === normalizePath(right).toLowerCase()
+}
+
+/** 目录查表/展开状态用的稳定键：统一分隔符并忽略大小写。 */
+export function folderKey(path: string): string {
+  return normalizePath(path).toLowerCase()
+}
+
 function parentPathOf(path: string): string | null {
   const index = Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/'))
   if (index <= 0) return null

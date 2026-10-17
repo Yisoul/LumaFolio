@@ -6,6 +6,7 @@ import type { BackupService } from './backup'
 import type { FontService } from './fonts'
 import type { AppDatabase } from './database'
 import type { WorkExporter } from './exporter'
+import { exportPhotos } from './photo-export'
 import type { LibraryScanner } from './scanner'
 import type { SettingsService } from './settings'
 import type { ThumbnailService } from './thumbnails'
@@ -71,6 +72,12 @@ export function registerIpcHandlers(context: IpcContext): () => void {
       : await dialog.showOpenDialog({ title: '选择作品导出目录', properties: ['openDirectory', 'createDirectory'] })
     return result.canceled ? null : result.filePaths[0]
   })
+  handle('app:choose-photo-directory', async () => {
+    const owner = context.getWindow()
+    const options: OpenDialogOptions = { title: '选择照片导出目录', properties: ['openDirectory', 'createDirectory'] }
+    const result = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options)
+    return result.canceled ? null : result.filePaths[0]
+  })
   handle('app:scan-all', async () => {
     await scanAll(context)
   })
@@ -101,6 +108,16 @@ export function registerIpcHandlers(context: IpcContext): () => void {
     const result = context.db.removeSourceRoot(z.string().uuid().parse(rootId), z.enum(['disable', 'library', 'all']).parse(mode))
     await configureWatchers(context)
     return result
+  })
+  handle('library:remove-folder', (_event, rootId: string, folderPath: string, mode: SourceRemovalMode) => {
+    return context.db.removeFolder(
+      z.string().uuid().parse(rootId),
+      z.string().min(1).parse(folderPath),
+      z.enum(['library', 'all']).parse(mode)
+    )
+  })
+  handle('library:get-folder-impact', (_event, rootId: string, folderPath: string) => {
+    return context.db.getFolderImpact(z.string().uuid().parse(rootId), z.string().min(1).parse(folderPath))
   })
   handle('library:set-root-enabled', async (_event, rootId: string, enabled: boolean) => {
     const root = context.db.setSourceRootEnabled(z.string().uuid().parse(rootId), Boolean(enabled))
@@ -151,6 +168,14 @@ export function registerIpcHandlers(context: IpcContext): () => void {
   handle('albums:remove-asset', (_event, albumId: string, assetId: string) => context.db.removeAssetFromAlbum(albumId, assetId))
   handle('albums:reorder', (_event, albumId: string, assetIds: string[]) => context.db.reorderAlbumAssets(albumId, assetIds))
   handle('albums:set-cover', (_event, albumId: string, assetId: string) => context.db.setAlbumCover(albumId, assetId))
+  handle('albums:export-photos', (_event, request: unknown) => {
+    const parsed = z.object({
+      assetIds: z.array(z.string().uuid()).min(1).max(2000),
+      directory: z.string().min(1),
+      mode: z.enum(['original', 'jpeg'])
+    }).parse(request)
+    return exportPhotos(context.db, parsed)
+  })
 
   handle('works:list', (_event, albumId: string) => context.db.listWorks(albumId))
   handle('works:list-covers', (_event, albumId: string) => context.db.listWorkCovers(albumId))

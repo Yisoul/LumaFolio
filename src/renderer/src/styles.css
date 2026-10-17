@@ -227,12 +227,30 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 
 .settings-actions { display: flex; align-items: center; gap: 6px; }
 .source-list { max-height: 430px; overflow-y: auto; overscroll-behavior: contain; }
+/* 来源目录层级树：根目录带复选框和状态，子目录只保留移除。 */
+.source-tree { display: grid; gap: 1px; max-height: 460px; overflow-y: auto; overscroll-behavior: contain; }
+.source-tree-hint { margin: 4px 0 10px; font-size: 11px; }
+.source-tree-empty { padding: 18px 10px; color: var(--muted); font-size: 12px; }
+.source-tree-row { display: grid; grid-template-columns: 18px 16px 16px minmax(0, 1fr) auto auto; align-items: center; gap: 7px; min-height: 32px; padding: 3px 6px; border-radius: var(--radius-sm); color: var(--ink); font-size: 12px; }
+.source-tree-actions { display: flex; align-items: center; gap: 6px; }
+.source-tree-row:hover { background: var(--bg-hover); }
+.source-tree-row.root { background: var(--paper-strong); }
+.source-tree-row.disabled { opacity: .55; }
+.source-tree-name { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.source-tree-name strong { overflow: hidden; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.source-tree-name small { overflow: hidden; color: var(--muted); font-family: var(--font-mono); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.source-tree-row b { color: var(--muted); font-size: 10px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.source-check { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); }
 .status-badge { padding: 3px 8px; border-radius: var(--radius-pill); color: var(--success); background: var(--success-soft); font-size: 11px; font-style: normal; }
 .status-badge.disabled { color: var(--muted); background: var(--sand); }
 .settings-row.disabled > span:first-child { opacity: .55; }
 .source-path { padding: 8px 10px; overflow: hidden; border-radius: var(--radius-sm); background: var(--sand); font-family: var(--font-mono); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .removal-impact { margin: 10px 0; color: var(--muted); font-size: 12px; }
 .removal-options { display: grid; gap: 8px; }
+.removal-paths { display: grid; gap: 2px; max-height: 96px; overflow-y: auto; margin-bottom: 8px; color: var(--muted); font-family: var(--font-mono); font-size: 10px; }
+.removal-paths span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.export-path { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.export-path input { width: 100%; min-width: 0; }
 .removal-options label { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; }
 .removal-options label.active { border-color: var(--accent); background: var(--soft-accent); }
 .removal-options span { display: grid; gap: 3px; }
@@ -546,7 +564,39 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .search-field input { flex: 1; min-width: 0; padding: 0; border: 0; box-shadow: none; background: transparent; color: var(--ink); font-size: 12px; }
 
 .thumb-slider { display: flex; align-items: center; gap: 6px; justify-self: center; }
-.thumb-slider input[type="range"] { width: 150px; accent-color: var(--accent); }
+.thumb-slider input[type="range"] { width: 150px; }
+/* ---------- 滑杆：自定义轨道，按当前值填充 ---------- */
+.thumb-slider input[type="range"], .range-control input[type="range"] {
+  appearance: none;
+  height: 16px;
+  margin: 0;
+  background: transparent;
+  --fill: 0%;
+  cursor: pointer;
+}
+.thumb-slider input[type="range"]::-webkit-slider-runnable-track,
+.range-control input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--accent) 0 var(--fill), var(--line) var(--fill) 100%);
+}
+.thumb-slider input[type="range"]::-webkit-slider-thumb,
+.range-control input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border: 1px solid var(--accent);
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .25);
+  transition: transform .12s ease-out;
+}
+.thumb-slider input[type="range"]:hover::-webkit-slider-thumb,
+.thumb-slider input[type="range"]:active::-webkit-slider-thumb,
+.range-control input[type="range"]:hover::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
 .segmented.small button { padding: 4px 8px; font-size: 11px; }
 
 /* ---------- 文件夹树 ---------- */

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AlbumStudioApi } from '../shared/api'
-import type { AppSettings, ExportOptions, LayerOrderAction, Page, ScanProgress, SearchFilters, SourceRemovalMode, TemplateDefinition } from '../shared/types'
+import type { AppSettings, ExportOptions, ExportPhotosRequest, LayerOrderAction, Page, ScanProgress, SearchFilters, SourceRemovalMode, TemplateDefinition } from '../shared/types'
 
 const api: AlbumStudioApi = {
   app: {
@@ -9,6 +9,7 @@ const api: AlbumStudioApi = {
     saveSettings: (settings: AppSettings) => ipcRenderer.invoke('app:save-settings', settings),
     chooseFolders: () => ipcRenderer.invoke('app:choose-folders'),
     chooseExportDirectory: () => ipcRenderer.invoke('app:choose-export-directory'),
+    choosePhotoDirectory: () => ipcRenderer.invoke('app:choose-photo-directory'),
     scanAll: () => ipcRenderer.invoke('app:scan-all'),
     backupNow: () => ipcRenderer.invoke('app:backup-now'),
     readClipboardText: () => ipcRenderer.invoke('app:read-clipboard'),
@@ -29,6 +30,8 @@ const api: AlbumStudioApi = {
     listRoots: () => ipcRenderer.invoke('library:list-roots'),
     addRoots: (paths: string[]) => ipcRenderer.invoke('library:add-roots', paths),
     removeRoot: (rootId: string, mode: SourceRemovalMode) => ipcRenderer.invoke('library:remove-root', rootId, mode),
+    removeFolder: (rootId: string, folderPath: string, mode: SourceRemovalMode) => ipcRenderer.invoke('library:remove-folder', rootId, folderPath, mode),
+    getFolderImpact: (rootId: string, folderPath: string) => ipcRenderer.invoke('library:get-folder-impact', rootId, folderPath),
     setRootEnabled: (rootId: string, enabled: boolean) => ipcRenderer.invoke('library:set-root-enabled', rootId, enabled),
     getRootImpact: (rootId: string) => ipcRenderer.invoke('library:get-root-impact', rootId),
     scanRoot: (rootId: string) => ipcRenderer.invoke('library:scan-root', rootId),
@@ -51,7 +54,8 @@ const api: AlbumStudioApi = {
     addAssets: (albumId: string, assetIds: string[]) => ipcRenderer.invoke('albums:add-assets', albumId, assetIds),
     removeAsset: (albumId: string, assetId: string) => ipcRenderer.invoke('albums:remove-asset', albumId, assetId),
     reorder: (albumId: string, assetIds: string[]) => ipcRenderer.invoke('albums:reorder', albumId, assetIds),
-    setCover: (albumId: string, assetId: string) => ipcRenderer.invoke('albums:set-cover', albumId, assetId)
+    setCover: (albumId: string, assetId: string) => ipcRenderer.invoke('albums:set-cover', albumId, assetId),
+    exportPhotos: (request: ExportPhotosRequest) => ipcRenderer.invoke('albums:export-photos', request)
   },
   works: {
     list: (albumId: string) => ipcRenderer.invoke('works:list', albumId),

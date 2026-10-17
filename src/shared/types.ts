@@ -9,6 +9,26 @@ export interface SourceRootImpact {
   locationCount: number
 }
 
+/** 子目录（含所有更深层子目录）的移除影响范围。 */
+export interface FolderImpact {
+  assetCount: number
+  locationCount: number
+}
+
+export type PhotoExportMode = 'original' | 'jpeg'
+
+export interface ExportPhotosRequest {
+  assetIds: string[]
+  directory: string
+  mode: PhotoExportMode
+}
+
+export interface ExportPhotosResult {
+  exported: number
+  failed: number
+  skipped: number
+}
+
 export interface SourceRemovalResult {
   mode: SourceRemovalMode
   affectedAssets: number

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FolderSummary, SourceRoot } from '../../shared/types'
-import { buildFolderTree, type FolderTreeNode } from './folder-tree'
+import { buildFolderTree, folderKey, type FolderTreeNode } from './folder-tree'
 import { IconChevronDown, IconChevronRight, IconFolder } from './icons'
 
 interface FolderTreeProps {
@@ -13,6 +13,8 @@ interface FolderTreeProps {
   totalCount: number
   /** 鼠标悬浮照片时联动高亮的目录。 */
   linkedPath?: string | null
+  /** 右键某个目录，用于「从此处移除」。 */
+  onContextMenu?: (event: React.MouseEvent, path: string) => void
 }
 
 export default function FolderTree(props: FolderTreeProps) {
@@ -37,19 +39,30 @@ export default function FolderTree(props: FolderTreeProps) {
   useEffect(() => {
     setExpanded((current) => {
       const next = new Set(current)
-      for (const node of tree) next.add(node.path)
+      for (const node of tree) next.add(folderKey(node.path))
+      // 深层来源目录的祖先链也展开，打开就能看到导入的那个目录。
+      for (const root of props.roots) {
+        let parent = root.path.replace(/[\\/]+$/, '').replace(/\//g, '\\')
+        while (parent) {
+          next.add(folderKey(parent))
+          const index = parent.lastIndexOf('\\')
+          if (index < 0) break
+          parent = parent.slice(0, index)
+          if (/^[A-Za-z]:$/.test(parent)) break
+        }
+      }
       for (const path of props.selectedPaths) {
         let parent = path
         while (parent) {
           const index = Math.max(parent.lastIndexOf('\\'), parent.lastIndexOf('/'))
           if (index <= 0) break
           parent = parent.slice(0, index)
-          if (!/^[A-Za-z]:$/.test(parent)) next.add(parent.replace(/\//g, '\\'))
+          if (!/^[A-Za-z]:$/.test(parent)) next.add(folderKey(parent))
         }
       }
       return next
     })
-  }, [tree, props.selectedPaths])
+  }, [tree, props.roots, props.selectedPaths])
 
   const toggleExpand = (path: string) => {
     setExpanded((current) => {
@@ -61,17 +74,24 @@ export default function FolderTree(props: FolderTreeProps) {
   }
 
   const renderNode = (node: FolderTreeNode, depth: number) => {
-    const isExpanded = expanded.has(node.path)
+    const key = folderKey(node.path)
+    const isExpanded = expanded.has(key)
     const hasChildren = node.children.length > 0
     const selected = props.selectedPaths.includes(node.path)
     const linked = Boolean(props.linkedPath) && props.linkedPath!.replace(/\//g, '\\') === node.path
     return (
       <div key={node.path}>
-        <div className={`tree-row ${selected ? 'selected' : ''} ${linked ? 'linked' : ''}`} data-path={node.path} style={{ paddingLeft: `${6 + depth * 12}px` }} title={node.path}>
+        <div
+          className={`tree-row ${selected ? 'selected' : ''} ${linked ? 'linked' : ''}`}
+          data-path={node.path}
+          style={{ paddingLeft: `${6 + depth * 12}px` }}
+          title={node.path}
+          onContextMenu={(event) => { if (props.onContextMenu) { event.preventDefault(); props.onContextMenu(event, node.path) } }}
+        >
           <button
             type="button"
             className={`tree-caret ${hasChildren ? '' : 'empty'}`}
-            onClick={(event) => { event.stopPropagation(); if (hasChildren) toggleExpand(node.path) }}
+            onClick={(event) => { event.stopPropagation(); if (hasChildren) toggleExpand(key) }}
             aria-label={isExpanded ? '折叠' : '展开'}
           >
             {hasChildren ? (isExpanded ? <IconChevronDown size={13} /> : <IconChevronRight size={13} />) : null}

@@ -31,10 +31,10 @@ describe('JustifiedPhotoGrid', () => {
 
     fireEvent.click(container.querySelectorAll('.tile-check')[1])
 
-    expect(onActivate).toHaveBeenCalledWith(expect.objectContaining({ id: 'b' }), true)
+    expect(onActivate).toHaveBeenCalledWith(expect.objectContaining({ id: 'b' }), 'toggle')
   })
 
-  it('treats shift click on the image as multi selection too', () => {
+  it('distinguishes plain, ctrl and shift clicks', () => {
     const onActivate = vi.fn()
     const { container } = render(<JustifiedPhotoGrid
       photos={[asset('a')]}
@@ -45,9 +45,15 @@ describe('JustifiedPhotoGrid', () => {
       onOpen={() => undefined}
     />)
 
-    fireEvent.click(container.querySelector('.tile-image')!, { shiftKey: true })
+    const image = container.querySelector('.tile-image')!
+    fireEvent.click(image)
+    expect(onActivate).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'a' }), 'replace')
 
-    expect(onActivate).toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }), true)
+    fireEvent.click(image, { ctrlKey: true })
+    expect(onActivate).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'a' }), 'toggle')
+
+    fireEvent.click(image, { shiftKey: true })
+    expect(onActivate).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'a' }), 'range')
   })
 
   it('measures the scroll container instead of its own inflated width', () => {

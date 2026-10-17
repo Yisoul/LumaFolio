@@ -67,6 +67,55 @@ describe('AppDatabase', () => {
     expect(db.searchAssets({ folderPaths: ['D:\\LR\\ab'], limit: 10, offset: 0 }).total).toBe(1)
   })
 
+  it('removes only the selected subfolder and keeps its siblings', () => {
+    const root = db.createSourceRoot('D:\\LR')
+    const add = (absolutePath: string, hash: string) => db.upsertMediaLocation({
+      rootId: root.id, absolutePath, relativePath: absolutePath, contentHash: hash,
+      sizeBytes: 1, modifiedAt: 1, width: 100, height: 100, format: 'jpeg', orientation: 'landscape'
+    })
+    add('D:\\LR\\keep\\one.jpg', 'keep-1')
+    add('D:\\LR\\a\\one.jpg', 'a-1')
+    const nested = add('D:\\LR\\a\\b\\two.jpg', 'a-2')
+    add('D:\\LR\\ab\\three.jpg', 'ab-3')
+    add('D:\\LR\\100%\\four.jpg', 'p-4')
+    add('D:\\LR\\1000\\five.jpg', 'p-5')
+    const album = db.createAlbum('保留引用')
+    db.addAssetToAlbum(album.id, nested.assetId)
+
+    expect(db.getFolderImpact(root.id, 'D:\\LR\\a')).toEqual({ assetCount: 2, locationCount: 2 })
+    expect(db.getFolderImpact(root.id, 'D:\\LR\\100%')).toEqual({ assetCount: 1, locationCount: 1 })
+
+    const result = db.removeFolder(root.id, 'D:\\LR\\a\\', 'library')
+
+    expect(result.affectedAssets).toBe(2)
+    expect(result.removedLocations).toBe(2)
+    // 兄弟目录 a_b / ab / 1000 都还在，图片总数从 6 变成 4。
+    expect(db.searchAssets({ limit: 20, offset: 0 }).total).toBe(4)
+    expect(db.listAlbumAssets(album.id)).toHaveLength(1)
+    expect(db.isPathIgnored('D:\\LR\\a\\one.jpg')).toBe(true)
+    expect(db.isPathIgnored('D:\\LR\\a\\b\\two.jpg')).toBe(true)
+    expect(db.isPathIgnored('D:\\LR\\a')).toBe(true)
+    // 相册里的照片已经没有可用位置，标记 missing。
+    expect(db.getAsset(nested.assetId)?.missing).toBe(true)
+  })
+
+  it('drops album references when a subfolder is removed with mode all', () => {
+    const root = db.createSourceRoot('D:\\LR')
+    const location = db.upsertMediaLocation({
+      rootId: root.id, absolutePath: 'D:\\LR\\drop\\one.jpg', relativePath: 'drop\\one.jpg', contentHash: 'drop-1',
+      sizeBytes: 1, modifiedAt: 1, width: 100, height: 100, format: 'jpeg', orientation: 'landscape'
+    })
+    const album = db.createAlbum('一起移除')
+    db.addAssetToAlbum(album.id, location.assetId)
+
+    const result = db.removeFolder(root.id, 'D:\\LR\\drop', 'all')
+
+    expect(result.removedAssets).toBe(1)
+    expect(result.removedAlbumItems).toBe(1)
+    expect(db.listAlbumAssets(album.id)).toHaveLength(0)
+    expect(db.searchAssets({ limit: 10, offset: 0 }).total).toBe(0)
+  })
+
   it('uses the first image layer of a work as its cover', () => {
     const root = db.createSourceRoot('C:\\photos')
     const { assetId } = db.upsertMediaLocation({

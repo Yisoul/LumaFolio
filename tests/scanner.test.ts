@@ -58,6 +58,25 @@ describe('LibraryScanner', () => {
     expect([asset.width, asset.height]).toEqual([1200, 800])
   })
 
+  it('skips a removed subfolder on the next scan and keeps its siblings', async () => {
+    for (const name of ['keep', 'drop']) {
+      await mkdir(join(rootDir, name))
+      await sharp({ create: { width: 120, height: 80, channels: 3, background: '#8899aa' } }).jpeg().toFile(join(rootDir, name, 'shot.jpg'))
+    }
+    const source = db.createSourceRoot(rootDir)
+    expect((await scanner.scanRoot(source)).discovered).toBe(2)
+
+    db.removeFolder(source.id, join(rootDir, 'drop'), 'library')
+    const second = await scanner.scanRoot(source)
+    // 被移除的目录整棵跳过，同级目录照常收录。
+    expect(second.discovered).toBe(1)
+    expect(db.searchAssets({ limit: 10, offset: 0 }).total).toBe(1)
+
+    await sharp({ create: { width: 120, height: 80, channels: 3, background: '#334455' } }).jpeg().toFile(join(rootDir, 'drop', 'new.jpg'))
+    const third = await scanner.scanRoot(source)
+    expect(third.discovered).toBe(1)
+  })
+
   it('keeps album references when a unique original is overwritten with content that already exists', async () => {
     const firstPath = join(rootDir, 'first.jpg')
     const secondPath = join(rootDir, 'second.jpg')

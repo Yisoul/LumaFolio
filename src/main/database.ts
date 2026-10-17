@@ -1,11 +1,24 @@
 import { randomUUID } from 'node:crypto'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import type { FolderSummary, ImageFit, LayerOrderAction, SourceRemovalMode, SourceRemovalResult, SourceRootImpact } from '../shared/types'
+import type { FolderImpact, FolderSummary, ImageFit, LayerOrderAction, SourceRemovalMode, SourceRemovalResult, SourceRootImpact } from '../shared/types'
 
 export type Orientation = 'landscape' | 'portrait' | 'square'
 export type OutputMode = 'pages' | 'long_image'
 export type LayerType = 'image' | 'text'
+
+/** 统一成反斜杠并去掉末尾分隔符，方便按目录前缀比较。 */
+function normalizeFolderPath(path: string): string {
+  return path.replace(/[\\/]+$/, '').replace(/\//g, '\\')
+}
+
+/** child 是否就是 parent，或位于 parent 之下（Windows 路径不区分大小写）。 */
+export function isPathInFolder(child: string, parent: string): boolean {
+  const base = normalizeFolderPath(parent).toLowerCase()
+  if (!base) return false
+  const target = normalizeFolderPath(child).toLowerCase()
+  return target === base || target.startsWith(`${base}\\`)
+}
 
 export interface SourceRoot {
   id: string
@@ -1184,6 +1197,84 @@ export class AppDatabase {
       FROM media_locations WHERE root_id = ?
     `).get(rootId) as Row
     return { assetCount: asNumber(row.asset_count), locationCount: asNumber(row.location_count) }
+  }
+
+  getFolderImpact(rootId: string, folderPath: string): FolderImpact {
+    const locations = this.locationsUnderFolder(rootId, folderPath)
+    return {
+      assetCount: new Set(locations.map((location) => asString(location.asset_id))).size,
+      locationCount: locations.length
+    }
+  }
+
+  /**
+   * 移除来源目录下的某个子目录（含更深层子目录）。
+   * 和移除整个来源目录一样只改数据库：磁盘原图不动，被移除的目录和文件写进 ignored_paths，
+   * 下次扫描会直接跳过整棵子树。
+   */
+  removeFolder(rootId: string, folderPath: string, mode: SourceRemovalMode = 'library'): SourceRemovalResult {
+    const root = this.db.prepare('SELECT * FROM source_roots WHERE id = ?').get(rootId) as Row | undefined
+    if (!root) throw new Error('来源目录不存在')
+    const rootPath = asString(root.path)
+    if (normalizeFolderPath(folderPath).toLowerCase() === normalizeFolderPath(rootPath).toLowerCase()) {
+      return this.removeSourceRoot(rootId, mode)
+    }
+    if (mode === 'disable') throw new Error('子文件夹不支持仅停止扫描')
+
+    const locations = this.locationsUnderFolder(rootId, folderPath)
+    const affectedAssets = new Set(locations.map((location) => asString(location.asset_id)))
+    const result: SourceRemovalResult = {
+      mode,
+      affectedAssets: affectedAssets.size,
+      removedLocations: 0,
+      removedAssets: 0,
+      removedAlbumItems: 0,
+      removedLayers: 0
+    }
+    const rememberIgnored = this.db.prepare('INSERT OR REPLACE INTO ignored_paths(path, ignored_at) VALUES (?, ?)')
+    const now = Date.now()
+    this.db.exec('BEGIN')
+    try {
+      rememberIgnored.run(normalizeFolderPath(folderPath), now)
+      if (mode === 'library') {
+        const removeLocation = this.db.prepare('DELETE FROM media_locations WHERE id = ?')
+        for (const location of locations) {
+          rememberIgnored.run(asString(location.absolute_path), now)
+          removeLocation.run(asString(location.id))
+        }
+        result.removedLocations = locations.length
+        const updateMissing = this.db.prepare(`
+          UPDATE media_assets SET missing = CASE WHEN NOT EXISTS (
+            SELECT 1 FROM media_locations WHERE asset_id = media_assets.id AND status = 'available'
+          ) THEN 1 ELSE 0 END, updated_at = ? WHERE id = ?
+        `)
+        for (const assetId of affectedAssets) updateMissing.run(now, assetId)
+      } else {
+        for (const assetId of affectedAssets) {
+          const assetLocations = this.db.prepare('SELECT absolute_path FROM media_locations WHERE asset_id = ?').all(assetId) as Row[]
+          for (const location of assetLocations) rememberIgnored.run(asString(location.absolute_path), now)
+          result.removedLocations += assetLocations.length
+          const layerCount = this.db.prepare('SELECT COUNT(*) AS count FROM layers WHERE asset_id = ?').get(assetId) as Row
+          const albumCount = this.db.prepare('SELECT COUNT(*) AS count FROM album_items WHERE asset_id = ?').get(assetId) as Row
+          result.removedLayers += asNumber(layerCount.count)
+          result.removedAlbumItems += asNumber(albumCount.count)
+          this.db.prepare('DELETE FROM layers WHERE asset_id = ?').run(assetId)
+          this.db.prepare('DELETE FROM album_items WHERE asset_id = ?').run(assetId)
+          this.db.prepare('DELETE FROM media_assets WHERE id = ?').run(assetId)
+          result.removedAssets += 1
+        }
+      }
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+    return result
+  }
+
+  private locationsUnderFolder(rootId: string, folderPath: string): Row[] {
+    const rows = this.db.prepare('SELECT id, asset_id, absolute_path FROM media_locations WHERE root_id = ?').all(rootId) as Row[]
+    return rows.filter((row) => isPathInFolder(asString(row.absolute_path), folderPath))
   }
 
   setSourceRootEnabled(rootId: string, enabled: boolean): SourceRoot {

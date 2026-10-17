@@ -1,6 +1,7 @@
 import type {
   Album, AppSettings, CustomFont, DuplicateGroup, ExportOptions, FolderSummary, ExportResult, Layer, MediaAssetSummary,
-  ImageFit, LayerOrderAction, MediaLocation, OutputMode, Page, ScanProgress, SearchFilters, SourceRemovalMode, SourceRemovalResult, SourceRoot, SourceRootImpact, TemplateDefinition, Work, WorkDocument
+  ExportPhotosRequest, ExportPhotosResult, FolderImpact, ImageFit, LayerOrderAction, MediaLocation, OutputMode, Page,
+  ScanProgress, SearchFilters, SourceRemovalMode, SourceRemovalResult, SourceRoot, SourceRootImpact, TemplateDefinition, Work, WorkDocument
 } from './types'
 
 export interface AppStats {
@@ -56,6 +57,8 @@ export interface AlbumStudioApi {
     saveSettings(settings: AppSettings): Promise<AppSettings>
     chooseFolders(): Promise<string[]>
     chooseExportDirectory(): Promise<string | null>
+    /** 选择照片导出（复制 / 转 JPEG）的目标文件夹。 */
+    choosePhotoDirectory(): Promise<string | null>
     scanAll(): Promise<void>
     backupNow(): Promise<string>
     readClipboardText(): Promise<string>
@@ -68,6 +71,9 @@ export interface AlbumStudioApi {
     listRoots(): Promise<SourceRoot[]>
     addRoots(paths: string[]): Promise<SourceRoot[]>
     removeRoot(rootId: string, mode: SourceRemovalMode): Promise<SourceRemovalResult>
+    /** 移除来源目录下的某个子目录（含更深层），磁盘原图不动。 */
+    removeFolder(rootId: string, folderPath: string, mode: SourceRemovalMode): Promise<SourceRemovalResult>
+    getFolderImpact(rootId: string, folderPath: string): Promise<FolderImpact>
     setRootEnabled(rootId: string, enabled: boolean): Promise<SourceRoot>
     getRootImpact(rootId: string): Promise<SourceRootImpact>
     scanRoot(rootId: string): Promise<{ discovered: number; indexed: number; errors: string[] }>
@@ -91,6 +97,8 @@ export interface AlbumStudioApi {
     removeAsset(albumId: string, assetId: string): Promise<void>
     reorder(albumId: string, assetIds: string[]): Promise<void>
     setCover(albumId: string, assetId: string): Promise<void>
+    /** 把选中的照片复制或转成 JPEG 导出到指定文件夹。 */
+    exportPhotos(request: ExportPhotosRequest): Promise<ExportPhotosResult>
   }
   works: {
     list(albumId: string): Promise<Work[]>

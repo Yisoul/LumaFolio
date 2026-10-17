@@ -183,6 +183,8 @@ export class LibraryScanner {
   private async collectSupportedFiles(rootPath: string, errors: string[]): Promise<string[]> {
     const files: string[] = []
     const visit = async (directory: string): Promise<void> => {
+      // 被移除/排除的目录整棵跳过，不用再进去逐个文件判断。
+      if (this.db.isPathIgnored(directory)) return
       let handle
       try {
         handle = await opendir(directory)

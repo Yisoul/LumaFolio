@@ -45,6 +45,7 @@ function stubApi(theme: 'dark' | 'light', assets: MediaAssetSummary[] = [], root
       saveSettings: vi.fn(async (settings: unknown) => settings),
       chooseFolders: vi.fn(async () => []),
       chooseExportDirectory: vi.fn(async () => null),
+      choosePhotoDirectory: vi.fn(async () => null),
       scanAll: vi.fn(async () => undefined),
       backupNow: vi.fn(async () => 'C:\\backup.sqlite'),
       readClipboardText: vi.fn(async () => ''),
@@ -59,8 +60,10 @@ function stubApi(theme: 'dark' | 'light', assets: MediaAssetSummary[] = [], root
       listFolders: vi.fn(async () => folders),
       listDuplicates: vi.fn(async () => []),
       getRootImpact: vi.fn(async () => ({ assetCount: 0, locationCount: 0 })),
+      getFolderImpact: vi.fn(async () => ({ assetCount: 0, locationCount: 0 })),
       addRoots: vi.fn(async () => []),
-      removeRoot: vi.fn(),
+      removeRoot: vi.fn(async () => ({ mode: 'library', affectedAssets: 1, removedLocations: 1, removedAssets: 0, removedAlbumItems: 0, removedLayers: 0 })),
+      removeFolder: vi.fn(async () => ({ mode: 'library', affectedAssets: 1, removedLocations: 1, removedAssets: 0, removedAlbumItems: 0, removedLayers: 0 })),
       setRootEnabled: vi.fn(),
       scanRoot: vi.fn(),
       get: vi.fn(),
@@ -79,9 +82,13 @@ function stubApi(theme: 'dark' | 'light', assets: MediaAssetSummary[] = [], root
       addAssets: vi.fn(),
       removeAsset: vi.fn(),
       reorder: vi.fn(),
-      setCover: vi.fn()
+      setCover: vi.fn(),
+      exportPhotos: vi.fn(async () => ({ exported: 1, failed: 0, skipped: 0 }))
     },
-    works: {},
+    works: {
+      list: vi.fn(async () => []),
+      listCovers: vi.fn(async () => [])
+    },
     fonts: {},
     templates: { list: vi.fn(async () => []), save: vi.fn() },
     exporter: { run: vi.fn() }
@@ -387,5 +394,90 @@ describe('App shell', () => {
     // 行高由图片撑开，说明文字在下面占据自己的空间。
     expect(row.style.height).toBe('')
     expect(image.style.height).not.toBe('')
+  })
+
+  it('selects a continuous range with shift click', async () => {
+    const assets = Array.from({ length: 5 }, (_, index) => libraryAsset(index + 1))
+    stubApi('dark', assets, [{ id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }])
+    const { container } = render(<App />)
+    await waitFor(() => expect(container.querySelectorAll('.tile')).toHaveLength(5))
+
+    fireEvent.click(container.querySelectorAll('.tile-image')[0])
+    fireEvent.click(container.querySelectorAll('.tile-image')[4], { shiftKey: true })
+    await waitFor(() => expect(container.querySelectorAll('.tile.selected')).toHaveLength(5))
+
+    // Ctrl 仍然只是切换单张：取消中间那张。
+    fireEvent.click(container.querySelectorAll('.tile-image')[2], { ctrlKey: true })
+    await waitFor(() => expect(container.querySelectorAll('.tile.selected')).toHaveLength(4))
+  })
+
+  it('selects only the clicked photo when shift is pressed without an anchor', async () => {
+    stubApi('dark', [libraryAsset(1), libraryAsset(2), libraryAsset(3)], [{ id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }])
+    const { container } = render(<App />)
+    await waitFor(() => expect(container.querySelectorAll('.tile')).toHaveLength(3))
+
+    fireEvent.click(container.querySelectorAll('.tile-image')[1], { shiftKey: true })
+    await waitFor(() => expect(container.querySelectorAll('.tile.selected')).toHaveLength(1))
+  })
+
+  it('removes several source folders in one go', async () => {
+    const roots = [
+      { id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 },
+      { id: 'root-2', path: 'C:\\photos-two', enabled: true, createdAt: 1 }
+    ]
+    const api = stubApi('dark', [], roots)
+    const { container } = render(<App />)
+    await waitFor(() => expect(container.querySelector('.browse-toolbar')).not.toBeNull())
+
+    fireEvent.keyDown(window, { key: '4', ctrlKey: true })
+    await waitFor(() => expect(screen.getByText('照片来源目录')).toBeTruthy())
+    const checks = container.querySelectorAll('.source-tree-row.root .source-check')
+    expect(checks).toHaveLength(2)
+    fireEvent.click(checks[0])
+    fireEvent.click(checks[1])
+
+    fireEvent.click(screen.getByRole('button', { name: /移除选中（2）/ }))
+    await waitFor(() => expect(screen.getByText(/2 个目录/)).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: '确认' }))
+
+    await waitFor(() => expect(api.library.removeRoot).toHaveBeenCalledTimes(2))
+    expect(api.library.removeRoot).toHaveBeenCalledWith('root-1', 'library')
+    expect(api.library.removeRoot).toHaveBeenCalledWith('root-2', 'library')
+  })
+
+  it('removes a subfolder from the folder tree context menu', async () => {
+    const roots = [{ id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }]
+    const folders = [{ path: 'C:\\photos\\trip', name: 'trip', assetCount: 2 }]
+    const api = stubApi('dark', [], roots, folders)
+    const { container } = render(<App />)
+    const findRow = () => Array.from(container.querySelectorAll('.tree-row')).find((node) => node.getAttribute('data-path') === 'C:\\photos\\trip')
+    await waitFor(() => expect(findRow()).toBeTruthy())
+
+    fireEvent.contextMenu(findRow()!)
+    fireEvent.click(await screen.findByText('从此处移除…'))
+    await waitFor(() => expect(api.library.getFolderImpact).toHaveBeenCalledWith('root-1', 'C:\\photos\\trip'))
+
+    fireEvent.click(screen.getByRole('button', { name: '确认' }))
+    await waitFor(() => expect(api.library.removeFolder).toHaveBeenCalledWith('root-1', 'C:\\photos\\trip', 'library'))
+  })
+
+  it('exports selected album photos to a folder', async () => {
+    const api = stubApi('dark', [], [{ id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }])
+    api.albums.list.mockResolvedValue([{ id: 'album-1', name: '测试相册', coverAssetId: null, createdAt: 0, updatedAt: 0 }])
+    api.albums.listAssets.mockResolvedValue([libraryAsset(1), libraryAsset(2)])
+    api.app.choosePhotoDirectory.mockResolvedValue('C:\\out')
+    const { container } = render(<App />)
+    await waitFor(() => expect(container.querySelector('.browse-toolbar')).not.toBeNull())
+
+    fireEvent.keyDown(window, { key: '3', ctrlKey: true })
+    fireEvent.click(await screen.findByText('测试相册'))
+    await waitFor(() => expect(container.querySelectorAll('.tile')).toHaveLength(2))
+    fireEvent.click(container.querySelectorAll('.tile-image')[0])
+    fireEvent.click(await screen.findByRole('button', { name: /导出选中（1）/ }))
+    fireEvent.click(screen.getByRole('button', { name: '选择文件夹…' }))
+    await waitFor(() => expect(screen.getByDisplayValue('C:\\out')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: '开始导出' }))
+
+    await waitFor(() => expect(api.albums.exportPhotos).toHaveBeenCalledWith({ assetIds: ['asset-1'], directory: 'C:\\out', mode: 'original' }))
   })
 })

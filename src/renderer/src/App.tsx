@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AppStats, CreateWorkRequest } from '../../shared/api'
 import type {
   Album, AppSettings, AppTheme, DuplicateGroup, FolderSummary, MediaAssetSummary, MediaLocation, OutputMode,
-  ScanProgress, SearchFilters, SourceRemovalMode, SourceRemovalResult, SourceRoot, SourceRootImpact,
+  FolderImpact, PhotoExportMode, ScanProgress, SearchFilters, SourceRemovalMode, SourceRemovalResult, SourceRoot,
   TemplateDefinition, Work
 } from '../../shared/types'
 import ContextMenu from './ContextMenu'
@@ -10,7 +10,9 @@ import { confirmDialog } from './ConfirmDialog'
 import Editor from './Editor'
 import FilterChips from './FilterChips'
 import FolderTree from './FolderTree'
-import JustifiedPhotoGrid from './JustifiedPhotoGrid'
+import { buildFolderTree, findRootForPath, folderKey, isPathInsideFolder, isSameFolder, type FolderTreeNode } from './folder-tree'
+import JustifiedPhotoGrid, { type PhotoSelectMode } from './JustifiedPhotoGrid'
+import RemoveSourceDialog from './RemoveSourceDialog'
 import Lightbox from './Lightbox'
 import PhotoInspector from './PhotoInspector'
 import ShortcutHelp from './ShortcutHelp'
@@ -19,7 +21,7 @@ import ThumbSizeSlider from './ThumbSizeSlider'
 import TextInputDialog from './TextInputDialog'
 import WaterfallView from './WaterfallView'
 import { RATING_FILTER_OPTIONS, errorMessage, formatCamera, formatDate, previewUrl, ratingFilterPatch, ratingFilterValue, ratingStars, thumbnailUrl } from './helpers'
-import { IconAlbums, IconChevronLeft, IconDuplicates, IconExpand, IconLibrary, IconPanelLeft, IconPanelRight, IconPlus, IconRefresh, IconSearch, IconSettings, IconTrash } from './icons'
+import { IconAlbums, IconChevronDown, IconChevronLeft, IconChevronRight, IconDuplicates, IconExpand, IconFolder, IconLibrary, IconPanelLeft, IconPanelRight, IconPlus, IconRefresh, IconSearch, IconSettings, IconTrash } from './icons'
 import { useShortcut } from './shortcuts'
 
 type NavKey = 'library' | 'duplicates' | 'albums' | 'settings'
@@ -98,10 +100,11 @@ export default function App() {
     }
   }
 
-  const removeRoot = async (rootId: string, mode: SourceRemovalMode): Promise<SourceRemovalResult> => {
-    const result = await window.albumApi.library.removeRoot(rootId, mode)
+  const removeRoots = async (rootIds: string[], mode: SourceRemovalMode): Promise<SourceRemovalResult> => {
+    const results: SourceRemovalResult[] = []
+    for (const rootId of rootIds) results.push(await window.albumApi.library.removeRoot(rootId, mode))
     await Promise.all([refreshRoots(), refreshStats(), refreshAlbums()])
-    return result
+    return sumRemovalResults(results)
   }
 
   const setRootEnabled = async (rootId: string, enabled: boolean): Promise<void> => {
@@ -226,10 +229,10 @@ export default function App() {
             <span>{scanProgress.processed} / {scanProgress.discovered}</span>
           </div>
         )}
-        {nav === 'library' && <LibraryPage roots={roots} albums={albums} onAddRoots={addRoots} onScanAll={scanAll} onRefreshStats={refreshStats} onToast={setToast} focusSearch={searchFocusRequest} onSearchFocused={() => setSearchFocusRequest(false)} settings={settings} onSettingsChange={applySettings} onAlbumsChanged={refreshAlbums} />}
+        {nav === 'library' && <LibraryPage roots={roots} albums={albums} onAddRoots={addRoots} onScanAll={scanAll} onRefreshStats={refreshStats} onRefreshRoots={refreshRoots} onToast={setToast} focusSearch={searchFocusRequest} onSearchFocused={() => setSearchFocusRequest(false)} settings={settings} onSettingsChange={applySettings} onAlbumsChanged={refreshAlbums} />}
         {nav === 'duplicates' && <DuplicatesPage onToast={setToast} onRefresh={refreshStats} />}
         {nav === 'albums' && <AlbumsPage albums={albums} selectedAlbumId={selectedAlbumId} onSelectAlbum={setSelectedAlbumId} onRefreshAlbums={refreshAlbums} templates={templates} onOpenWork={setEditingWorkId} onToast={setToast} onCreateAlbum={() => setAlbumDialogOpen(true)} settings={settings} onSettingsChange={applySettings} />}
-        {nav === 'settings' && <SettingsPage roots={roots} onAddRoots={addRoots} onRemoveRoot={removeRoot} onSetRootEnabled={setRootEnabled} onScanAll={scanAll} onRefreshStats={refreshStats} onToast={setToast} settings={settings} onSettingsChange={applySettings} onUiScaleChange={changeUiScale} />}
+        {nav === 'settings' && <SettingsPage roots={roots} onAddRoots={addRoots} onRemoveRoots={removeRoots} onSetRootEnabled={setRootEnabled} onScanAll={scanAll} onRefreshStats={refreshStats} onRefreshRoots={refreshRoots} onToast={setToast} settings={settings} onSettingsChange={applySettings} onUiScaleChange={changeUiScale} />}
       </main>
       {toast && <Toast toast={toast} onClose={() => setToast(null)} />}
       {albumDialogOpen && <TextInputDialog title="新建相册" label="相册名称" confirmLabel="创建相册" onClose={() => setAlbumDialogOpen(false)} onConfirm={createAlbum} />}
@@ -242,12 +245,25 @@ function NavButton(props: { icon: React.ReactNode; label: string; count?: number
   return <button className={`nav-button ${props.active ? 'active' : ''}`} onClick={props.onClick}><span className="nav-icon">{props.icon}</span><span>{props.label}</span>{props.count != null && props.count > 0 && <b>{props.count}</b>}</button>
 }
 
+/** 批量移除后把几条结果汇总成一条提示。 */
+function sumRemovalResults(results: SourceRemovalResult[]): SourceRemovalResult {
+  return results.reduce<SourceRemovalResult>((total, result) => ({
+    mode: result.mode,
+    affectedAssets: total.affectedAssets + result.affectedAssets,
+    removedLocations: total.removedLocations + result.removedLocations,
+    removedAssets: total.removedAssets + result.removedAssets,
+    removedAlbumItems: total.removedAlbumItems + result.removedAlbumItems,
+    removedLayers: total.removedLayers + result.removedLayers
+  }), { mode: 'library', affectedAssets: 0, removedLocations: 0, removedAssets: 0, removedAlbumItems: 0, removedLayers: 0 })
+}
+
 function LibraryPage(props: {
   roots: SourceRoot[]
   albums: Album[]
   onAddRoots: () => Promise<void>
   onScanAll: () => Promise<void>
   onRefreshStats: () => Promise<void>
+  onRefreshRoots: () => Promise<void>
   onToast: (toast: { kind: 'info' | 'error'; text: string }) => void
   focusSearch: boolean
   onSearchFocused: () => void
@@ -272,6 +288,10 @@ function LibraryPage(props: {
   const [inspectorOpen, setInspectorOpen] = useState(() => window.innerWidth >= 1280)
   const [treeOpen, setTreeOpen] = useState(true)
   const [hoveredFolder, setHoveredFolder] = useState<string | null>(null)
+  const [anchorId, setAnchorId] = useState<string | null>(null)
+  const [refreshToken, setRefreshToken] = useState(0)
+  const [folderMenu, setFolderMenu] = useState<{ x: number; y: number; path: string } | null>(null)
+  const [folderRemove, setFolderRemove] = useState<{ path: string; rootId: string; isRoot: boolean; modes: SourceRemovalMode[]; impact: FolderImpact | null } | null>(null)
   const requestIdRef = useRef(0)
   const sentinelRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -323,7 +343,7 @@ function LibraryPage(props: {
       }
     }, page === 0 ? 220 : 0)
     return () => clearTimeout(timer)
-  }, [filters, page, props.onToast])
+  }, [filters, page, refreshToken, props.onToast])
 
   const hasMore = photos.length < total
 
@@ -386,19 +406,76 @@ function LibraryPage(props: {
   }
 
   const activePhoto = photos.find((photo) => photo.id === activeId) ?? null
-  /** 单击设为当前照片并打开信息栏；Ctrl/⌘ 单击切换多选。 */
-  const activate = (asset: MediaAssetSummary, additive: boolean): void => {
+  /** 单击设为当前照片并打开信息栏；Ctrl/⌘ 切换单张，Shift 选中锚点到当前这一整段。 */
+  const activate = (asset: MediaAssetSummary, mode: PhotoSelectMode): void => {
     setActiveId(asset.id)
     setSelected((current) => {
-      if (!additive) return new Set([asset.id])
-      const next = new Set(current)
-      if (next.has(asset.id)) next.delete(asset.id)
-      else next.add(asset.id)
-      if (next.size === 0) next.add(asset.id)
-      return next
+      if (mode === 'toggle') {
+        const next = new Set(current)
+        if (next.has(asset.id)) next.delete(asset.id)
+        else next.add(asset.id)
+        if (next.size === 0) next.add(asset.id)
+        return next
+      }
+      if (mode === 'range' && anchorId) {
+        const from = photos.findIndex((photo) => photo.id === anchorId)
+        const to = photos.findIndex((photo) => photo.id === asset.id)
+        if (from >= 0 && to >= 0) {
+          const [start, end] = from <= to ? [from, to] : [to, from]
+          return new Set(photos.slice(start, end + 1).map((photo) => photo.id))
+        }
+      }
+      return new Set([asset.id])
     })
+    if (mode !== 'range') setAnchorId(asset.id)
     setInspectorOpen(true)
   }
+
+  /** 右键文件夹树 → 打开「从此处移除」，根目录和子目录共用同一个弹窗。 */
+  const openFolderRemove = async (path: string): Promise<void> => {
+    const root = findRootForPath(path, props.roots)
+    if (!root) {
+      props.onToast({ kind: 'error', text: '这个目录不属于任何已添加的来源目录' })
+      return
+    }
+    const isRoot = isSameFolder(path, root.path)
+    setFolderRemove({ path, rootId: root.id, isRoot, modes: isRoot ? ['library', 'disable', 'all'] : ['library', 'all'], impact: null })
+    try {
+      const impact = await window.albumApi.library.getFolderImpact(root.id, path)
+      setFolderRemove((current) => current && current.path === path ? { ...current, impact } : current)
+    } catch (error) {
+      props.onToast({ kind: 'error', text: errorMessage(error) })
+    }
+  }
+
+  const confirmFolderRemove = async (mode: SourceRemovalMode): Promise<void> => {
+    if (!folderRemove) return
+    const target = folderRemove
+    try {
+      // 根目录走来源目录移除（支持「仅停止扫描」），子目录走 removeFolder。
+      const result = target.isRoot
+        ? await window.albumApi.library.removeRoot(target.rootId, mode)
+        : await window.albumApi.library.removeFolder(target.rootId, target.path, mode)
+      // 被移除的目录如果正在筛选，顺手清掉，避免留下空结果。
+      setFilters((current) => {
+        const folderPaths = current.folderPaths ?? []
+        const next = folderPaths.filter((path) => !isPathInsideFolder(path, target.path))
+        if (next.length === folderPaths.length) return current
+        return next.length ? { ...current, folderPaths: next } : { ...current, folderPaths: undefined }
+      })
+      setSelected(new Set())
+      setAnchorId(null)
+      setPage(0)
+      setRefreshToken((value) => value + 1)
+      setFolderRemove(null)
+      setFolders(await window.albumApi.library.listFolders())
+      await Promise.all([props.onRefreshStats(), props.onAlbumsChanged(), target.isRoot ? props.onRefreshRoots() : Promise.resolve()])
+      props.onToast({ kind: 'info', text: mode === 'disable' ? '已停止扫描该目录' : `已移除 ${result.removedLocations} 个文件位置` })
+    } catch (error) {
+      props.onToast({ kind: 'error', text: errorMessage(error) })
+    }
+  }
+
   const openLightbox = (asset: MediaAssetSummary): void => {
     const index = photos.findIndex((photo) => photo.id === asset.id)
     if (index >= 0) setLightboxIndex(index)
@@ -446,6 +523,7 @@ function LibraryPage(props: {
               onClear={() => updateFilters({ folderPaths: undefined })}
               totalCount={total}
               linkedPath={hoveredFolder}
+              onContextMenu={(event, path) => setFolderMenu({ x: event.clientX, y: event.clientY, path })}
             />
           </div>
         </aside>
@@ -526,6 +604,17 @@ function LibraryPage(props: {
         ...props.albums.map((album) => ({ label: `加入相册：${album.name}`, onClick: () => void addAssetToAlbum(album, contextMenu.asset.id) })),
         { label: '从图库移除', separator: true, danger: true, onClick: () => void removeFromLibrary(contextMenu.asset) }
       ]} />}
+      {folderMenu && <ContextMenu x={folderMenu.x} y={folderMenu.y} onClose={() => setFolderMenu(null)} items={[
+        { label: '从此处移除…', hint: '仅改索引', danger: true, onClick: () => void openFolderRemove(folderMenu.path) }
+      ]} />}
+      {folderRemove && <RemoveSourceDialog
+        title={folderRemove.isRoot ? '移除来源目录' : '移除此文件夹'}
+        paths={[folderRemove.path]}
+        impact={folderRemove.impact}
+        modes={folderRemove.modes}
+        onClose={() => setFolderRemove(null)}
+        onConfirm={confirmFolderRemove}
+      />}
     </section>
   )
 }
@@ -668,6 +757,8 @@ function AlbumDetail(props: {
   const [workCovers, setWorkCovers] = useState<Record<string, string | null>>({})
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; asset: MediaAssetSummary } | null>(null)
   const [inspectorOpen, setInspectorOpen] = useState(() => window.innerWidth >= 1280)
+  const [anchorId, setAnchorId] = useState<string | null>(null)
+  const [exportOpen, setExportOpen] = useState(false)
   const load = useCallback(async () => { const [nextAssets, nextWorks] = await Promise.all([window.albumApi.albums.listAssets(props.album.id), window.albumApi.works.list(props.album.id)]); setAssets(nextAssets); setWorks(nextWorks) }, [props.album.id])
   const loadCovers = useCallback(async () => {
     try {
@@ -733,16 +824,27 @@ function AlbumDetail(props: {
   }
 
   const activePhoto = assets.find((asset) => asset.id === activeId) ?? null
-  const activate = (asset: MediaAssetSummary, additive: boolean): void => {
+  const activate = (asset: MediaAssetSummary, mode: PhotoSelectMode): void => {
     setActiveId(asset.id)
     setSelected((current) => {
-      if (!additive) return new Set([asset.id])
-      const next = new Set(current)
-      if (next.has(asset.id)) next.delete(asset.id)
-      else next.add(asset.id)
-      if (next.size === 0) next.add(asset.id)
-      return next
+      if (mode === 'toggle') {
+        const next = new Set(current)
+        if (next.has(asset.id)) next.delete(asset.id)
+        else next.add(asset.id)
+        if (next.size === 0) next.add(asset.id)
+        return next
+      }
+      if (mode === 'range' && anchorId) {
+        const from = assets.findIndex((item) => item.id === anchorId)
+        const to = assets.findIndex((item) => item.id === asset.id)
+        if (from >= 0 && to >= 0) {
+          const [start, end] = from <= to ? [from, to] : [to, from]
+          return new Set(assets.slice(start, end + 1).map((item) => item.id))
+        }
+      }
+      return new Set([asset.id])
     })
+    if (mode !== 'range') setAnchorId(asset.id)
     setInspectorOpen(true)
   }
   const openLightbox = (asset: MediaAssetSummary): void => {
@@ -783,6 +885,7 @@ function AlbumDetail(props: {
           <div className="button-row">
             {assets.length > 0 && <button type="button" className="text-button" onClick={() => setSelected(allSelected ? new Set() : new Set(assets.map((asset) => asset.id)))}>{allSelected ? '取消全选' : '全选'}</button>}
             {selected.size > 0 && <button type="button" className="text-button danger" onClick={() => void removeSelected()}>从相册移除 {selected.size} 张</button>}
+            {selected.size > 0 && <button type="button" className="text-button" onClick={() => setExportOpen(true)}>导出选中（{selected.size}）</button>}
           </div>
         </div>
 
@@ -822,6 +925,21 @@ function AlbumDetail(props: {
       </>}
 
       {pickerOpen && <AssetPicker title="选择照片加入相册" thumbnailSize={props.settings.thumbnailSize} onClose={() => setPickerOpen(false)} onConfirm={async (ids) => { try { await window.albumApi.albums.addAssets(props.album.id, ids); setPickerOpen(false); await load() } catch (error) { props.onToast({ kind: 'error', text: errorMessage(error) }) } }} />}
+      {exportOpen && <ExportPhotosDialog
+        count={selected.size}
+        onClose={() => setExportOpen(false)}
+        onConfirm={async ({ directory, mode }) => {
+          try {
+            const result = await window.albumApi.albums.exportPhotos({ assetIds: [...selected], directory, mode })
+            const failed = result.failed + result.skipped
+            props.onToast({
+              kind: failed > 0 ? 'error' : 'info',
+              text: failed > 0 ? `已导出 ${result.exported} 张，${failed} 张跳过或失败` : `已导出 ${result.exported} 张到 ${directory}`
+            })
+            setExportOpen(false)
+          } catch (error) { props.onToast({ kind: 'error', text: errorMessage(error) }) }
+        }}
+      />}
       {lightboxIndex != null && assets[lightboxIndex] && <Lightbox assets={assets} index={lightboxIndex} onChangeIndex={setLightboxIndex} onClose={() => setLightboxIndex(null)} />}
       {waterfallOpen && <WaterfallView source={{ kind: 'assets', title: `全屏浏览 · ${props.album.name}`, assets }} onClose={() => setWaterfallOpen(false)} onToast={props.onToast} onAlbumsChanged={props.onAlbumsChanged} />}
       {contextMenu && <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)} items={[
@@ -919,10 +1037,11 @@ function AssetPicker(props: { title: string; thumbnailSize: number; onClose: () 
               targetHeight={props.thumbnailSize}
               selectedIds={selected}
               activeId={null}
-              onActivate={(asset, additive) => setSelected((current) => {
-                if (!additive) return new Set([asset.id])
+              onActivate={(asset, mode) => setSelected((current) => {
+                if (mode === 'replace') return new Set([asset.id])
                 const next = new Set(current)
                 if (next.has(asset.id)) next.delete(asset.id)
+                else next.add(asset.id)
                 return next
               })}
               onOpen={(asset) => setDetail(asset)}
@@ -936,38 +1055,228 @@ function AssetPicker(props: { title: string; thumbnailSize: number; onClose: () 
     </Modal>
   )
 }
+/** 相册里导出选中照片：复制原图或统一转成 JPEG。 */
+function ExportPhotosDialog(props: {
+  count: number
+  onClose: () => void
+  onConfirm: (options: { directory: string; mode: PhotoExportMode }) => Promise<void>
+}) {
+  const [mode, setMode] = useState<PhotoExportMode>('original')
+  const [directory, setDirectory] = useState('')
+  const [busy, setBusy] = useState(false)
+  const pick = async (): Promise<void> => {
+    try {
+      const picked = await window.albumApi.app.choosePhotoDirectory()
+      if (picked) setDirectory(picked)
+    } catch {
+      // 目录选择取消或失败时保持当前值。
+    }
+  }
+  const submit = async (): Promise<void> => {
+    if (!directory) return
+    setBusy(true)
+    try { await props.onConfirm({ directory, mode }) } finally { setBusy(false) }
+  }
+  return (
+    <Modal title={`导出 ${props.count} 张照片`} onClose={props.onClose}>
+      <div className="form-stack">
+        <div className="removal-options">
+          <label className={mode === 'original' ? 'active' : ''}><input type="radio" name="photo-export" checked={mode === 'original'} onChange={() => setMode('original')} /><span><strong>复制原图</strong><small>JPG / PNG / RAW 原样复制，不重新编码，最快。</small></span></label>
+          <label className={mode === 'jpeg' ? 'active' : ''}><input type="radio" name="photo-export" checked={mode === 'jpeg'} onChange={() => setMode('jpeg')} /><span><strong>导出 JPEG</strong><small>长边 2560、质量 92，保留 EXIF；RAW 用相机内嵌预览转码。</small></span></label>
+        </div>
+        <label>目标文件夹
+          <div className="export-path">
+            <input readOnly value={directory} placeholder="还没有选择文件夹" />
+            <button type="button" className="button secondary" onClick={() => void pick()}>选择文件夹…</button>
+          </div>
+        </label>
+      </div>
+      <div className="dialog-actions">
+        <button type="button" className="button secondary" disabled={busy} onClick={props.onClose}>取消</button>
+        <button type="button" className="button primary" disabled={busy || !directory || props.count === 0} onClick={() => void submit()}>{busy ? '正在导出…' : '开始导出'}</button>
+      </div>
+    </Modal>
+  )
+}
+
+type SettingsRemoveRequest =
+  | { kind: 'roots'; roots: SourceRoot[] }
+  | { kind: 'folder'; root: SourceRoot; path: string }
+
+function findFolderNode(nodes: FolderTreeNode[], key: string): FolderTreeNode | null {
+  for (const node of nodes) {
+    if (folderKey(node.path) === key) return node
+    const child = findFolderNode(node.children, key)
+    if (child) return child
+  }
+  return null
+}
+
 function SettingsPage(props: {
   roots: SourceRoot[]
   onAddRoots: () => Promise<void>
-  onRemoveRoot: (rootId: string, mode: SourceRemovalMode) => Promise<SourceRemovalResult>
+  onRemoveRoots: (rootIds: string[], mode: SourceRemovalMode) => Promise<SourceRemovalResult>
   onSetRootEnabled: (rootId: string, enabled: boolean) => Promise<void>
   onScanAll: () => Promise<void>
   onRefreshStats: () => Promise<void>
+  onRefreshRoots: () => Promise<void>
   onToast: (toast: { kind: 'info' | 'error'; text: string }) => void
   settings: AppSettings
   onSettingsChange: (patch: Partial<AppSettings>, persist?: 'now' | 'debounce') => void
   onUiScaleChange: (value: number) => void
 }) {
-  const [removeTarget, setRemoveTarget] = useState<SourceRoot | null>(null)
-  const [impact, setImpact] = useState<SourceRootImpact | null>(null)
+  const [folders, setFolders] = useState<FolderSummary[]>([])
+  const [selectedRoots, setSelectedRoots] = useState<Set<string>>(new Set())
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [removeRequest, setRemoveRequest] = useState<SettingsRemoveRequest | null>(null)
+  const [impact, setImpact] = useState<FolderImpact | null>(null)
   const [cacheInput, setCacheInput] = useState(String(props.settings.thumbnailCacheLimitGb))
   const settings = props.settings
+  // 设置页只展示来源目录本身和它下面的子目录，不再把盘符以上的祖先链铺出来。
+  const tree = useMemo(() => props.roots.map((root) => {
+    const found = findFolderNode(buildFolderTree(folders, [root]), folderKey(root.path))
+    if (found) return found
+    const path = root.path.replace(/[\\/]+$/, '').replace(/\//g, '\\')
+    return { path, name: path.split(/[\\/]/).filter(Boolean).pop() || path, count: 0, totalCount: 0, children: [] }
+  }), [folders, props.roots])
+  const rootByPath = useMemo(() => new Map(props.roots.map((root) => [folderKey(root.path), root])), [props.roots])
+
+  const loadFolders = useCallback(async (): Promise<void> => {
+    try { setFolders(await window.albumApi.library.listFolders()) } catch { /* 索引异常时保留旧树 */ }
+  }, [])
+
   useEffect(() => { setCacheInput(String(settings.thumbnailCacheLimitGb)) }, [settings.thumbnailCacheLimitGb])
+  useEffect(() => { void loadFolders() }, [loadFolders, props.roots])
+  // 来源目录默认展开，能直接看到导入时的层级。
+  useEffect(() => {
+    setExpanded((current) => {
+      const next = new Set(current)
+      for (const root of props.roots) {
+        // 深层来源目录的祖先链也展开，否则默认只能看到「文档」这种顶层节点。
+        let path = root.path.replace(/[\\/]+$/, '').replace(/\//g, '\\')
+        while (path) {
+          next.add(folderKey(path))
+          const index = path.lastIndexOf('\\')
+          if (index < 0) break
+          path = path.slice(0, index)
+          if (/^[A-Za-z]:$/.test(path)) break
+        }
+      }
+      return next
+    })
+  }, [props.roots])
+  useEffect(() => {
+    setSelectedRoots((current) => {
+      const ids = new Set(props.roots.map((root) => root.id))
+      const next = new Set([...current].filter((id) => ids.has(id)))
+      return next.size === current.size ? current : next
+    })
+  }, [props.roots])
+
   const backup = async () => { try { const path = await window.albumApi.app.backupNow(); props.onToast({ kind: 'info', text: `备份已保存：${path}` }); await props.onRefreshStats() } catch (error) { props.onToast({ kind: 'error', text: errorMessage(error) }) } }
-  const openRemove = async (root: SourceRoot) => {
-    setRemoveTarget(root)
+
+  const openRootsRemove = async (roots: SourceRoot[]) => {
+    if (roots.length === 0) return
+    setRemoveRequest({ kind: 'roots', roots })
     setImpact(null)
-    try { setImpact(await window.albumApi.library.getRootImpact(root.id)) } catch (error) { props.onToast({ kind: 'error', text: errorMessage(error) }) }
+    try {
+      const impacts = await Promise.all(roots.map((root) => window.albumApi.library.getRootImpact(root.id)))
+      setImpact(impacts.reduce((total, item) => ({ assetCount: total.assetCount + item.assetCount, locationCount: total.locationCount + item.locationCount }), { assetCount: 0, locationCount: 0 }))
+    } catch (error) { props.onToast({ kind: 'error', text: errorMessage(error) }) }
+  }
+  const openFolderRemove = async (root: SourceRoot, path: string) => {
+    setRemoveRequest({ kind: 'folder', root, path })
+    setImpact(null)
+    try { setImpact(await window.albumApi.library.getFolderImpact(root.id, path)) } catch (error) { props.onToast({ kind: 'error', text: errorMessage(error) }) }
   }
   const toggleRoot = async (root: SourceRoot) => {
     try { await props.onSetRootEnabled(root.id, !root.enabled); props.onToast({ kind: 'info', text: root.enabled ? '已停止扫描该目录' : '已重新启用该目录' }) } catch (error) { props.onToast({ kind: 'error', text: errorMessage(error) }) }
+  }
+  const toggleSelect = (rootId: string) => {
+    setSelectedRoots((current) => {
+      const next = new Set(current)
+      if (next.has(rootId)) next.delete(rootId)
+      else next.add(rootId)
+      return next
+    })
+  }
+  const allRootsSelected = props.roots.length > 0 && selectedRoots.size === props.roots.length
+  const toggleSelectAll = () => setSelectedRoots(allRootsSelected ? new Set() : new Set(props.roots.map((root) => root.id)))
+  const toggleExpand = (key: string, hasChildren: boolean) => {
+    if (!hasChildren) return
+    setExpanded((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+  const confirmRemove = async (mode: SourceRemovalMode): Promise<void> => {
+    if (!removeRequest) return
+    try {
+      let result: SourceRemovalResult
+      if (removeRequest.kind === 'roots') {
+        result = await props.onRemoveRoots(removeRequest.roots.map((root) => root.id), mode)
+      } else {
+        result = await window.albumApi.library.removeFolder(removeRequest.root.id, removeRequest.path, mode)
+        await Promise.all([props.onRefreshRoots(), props.onRefreshStats()])
+      }
+      await loadFolders()
+      setSelectedRoots(new Set())
+      setRemoveRequest(null)
+      setImpact(null)
+      props.onToast({ kind: 'info', text: mode === 'disable' ? '已停止扫描所选目录' : `已处理 ${result.affectedAssets} 张照片，移除 ${result.removedLocations} 个文件位置` })
+    } catch (error) {
+      props.onToast({ kind: 'error', text: errorMessage(error) })
+    }
+  }
+
+  const renderNode = (node: FolderTreeNode, depth: number): React.ReactNode => {
+    const key = folderKey(node.path)
+    const root = rootByPath.get(key)
+    const owningRoot = root ?? findRootForPath(node.path, props.roots)
+    const isExpanded = expanded.has(key)
+    const hasChildren = node.children.length > 0
+    return (
+      <div key={node.path}>
+        <div className={`source-tree-row ${root ? 'root' : 'child'} ${root && !root.enabled ? 'disabled' : ''}`} style={{ paddingLeft: `${4 + depth * 14}px` }}>
+          <button type="button" className={`tree-caret ${hasChildren ? '' : 'empty'}`} onClick={() => toggleExpand(key, hasChildren)} aria-label={isExpanded ? '折叠' : '展开'}>
+            {hasChildren ? (isExpanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />) : null}
+          </button>
+          {root
+            ? <input type="checkbox" className="source-check" checked={selectedRoots.has(root.id)} onChange={() => toggleSelect(root.id)} aria-label={`选择 ${node.name}`} />
+            : <span className="source-check" aria-hidden="true" />}
+          <IconFolder size={14} />
+          <span className="source-tree-name" title={node.path}><strong>{node.name}</strong>{root && <small>{node.path}</small>}</span>
+          <b>{node.totalCount.toLocaleString()}</b>
+          <span className="source-tree-actions">
+            {root && <i className={`status-badge ${root.enabled ? '' : 'disabled'}`}>{root.enabled ? '已启用' : '已停用'}</i>}
+            {root && <button type="button" className="text-button" onClick={() => void toggleRoot(root)}>{root.enabled ? '停用' : '启用'}</button>}
+            {owningRoot && <button
+              type="button"
+              className="text-button danger"
+              onClick={() => { if (root) void openRootsRemove([root]); else void openFolderRemove(owningRoot, node.path) }}
+            >移除</button>}
+          </span>
+        </div>
+        {hasChildren && isExpanded && node.children.map((child) => renderNode(child, depth + 1))}
+      </div>
+    )
   }
   return (
     <section className="page settings-page">
       <header className="page-header"><div><p className="eyebrow">SETTINGS</p><h1>设置</h1><p className="subtle">所有数据保存在本机应用目录，原图始终留在原位置。</p></div></header>
       <section className="settings-card">
-        <div className="section-heading"><h2>照片来源目录</h2><button className="button secondary" onClick={() => void props.onAddRoots()}>添加文件夹</button></div>
-        <div className="source-list">{props.roots.map((root) => <div className={`settings-row source-row ${root.enabled ? '' : 'disabled'}`} key={root.id}><span title={root.path}><strong>{sourceName(root.path)}</strong><small>{root.path}</small></span><span className="settings-actions"><i className={`status-badge ${root.enabled ? '' : 'disabled'}`}>{root.enabled ? '已启用' : '已停用'}</i><button className="text-button" onClick={() => void toggleRoot(root)}>{root.enabled ? '停用' : '重新启用'}</button><button className="text-button danger" onClick={() => void openRemove(root)}>移除</button></span></div>)}</div>
+        <div className="section-heading">
+          <h2>照片来源目录</h2>
+          <div className="button-row">
+            <button type="button" className="text-button" disabled={props.roots.length === 0} onClick={toggleSelectAll}>{allRootsSelected ? '取消全选' : '全选'}</button>
+            <button type="button" className="button secondary" disabled={selectedRoots.size === 0} onClick={() => void openRootsRemove(props.roots.filter((root) => selectedRoots.has(root.id)))}>移除选中（{selectedRoots.size}）</button>
+            <button type="button" className="button secondary" onClick={() => void props.onAddRoots()}>添加文件夹</button>
+          </div>
+        </div>
+        <p className="subtle source-tree-hint">按导入时的文件夹层级展开；子文件夹可以单独移除，磁盘原图始终不动。</p>
+        <div className="source-tree">{tree.length === 0 ? <div className="source-tree-empty">还没有来源目录。</div> : tree.map((node) => renderNode(node, 0))}</div>
       </section>
       <section className="settings-card">
         <h2>外观</h2>
@@ -988,43 +1297,18 @@ function SettingsPage(props: {
         <label className="settings-row"><span><strong>默认缩略图大小</strong><small>图库和相册里对齐行的目标行高，也可以直接用工具栏滑杆调</small></span><ThumbSizeSlider value={settings.thumbnailSize} onChange={(value) => props.onSettingsChange({ thumbnailSize: value }, 'debounce')} /></label>
         <div className="button-row"><button className="button secondary" onClick={() => void props.onScanAll()}>重新扫描全部目录</button><button className="button secondary" onClick={() => void backup()}>立即备份数据库</button></div>
       </section>
-      {removeTarget && <RemoveRootDialog root={removeTarget} impact={impact} onClose={() => { setRemoveTarget(null); setImpact(null) }} onConfirm={async (mode) => {
-        try {
-          const result = await props.onRemoveRoot(removeTarget.id, mode)
-          const message = mode === 'disable' ? '已停止扫描该目录' : `已处理 ${result.affectedAssets} 张照片，移除 ${result.removedLocations} 个文件位置`
-          props.onToast({ kind: 'info', text: message })
-          setRemoveTarget(null)
-          setImpact(null)
-        } catch (error) { props.onToast({ kind: 'error', text: errorMessage(error) }) }
-      }} />}
+      {removeRequest && <RemoveSourceDialog
+        title={removeRequest.kind === 'roots' ? '移除来源目录' : '移除此文件夹'}
+        paths={removeRequest.kind === 'roots' ? removeRequest.roots.map((root) => root.path) : [removeRequest.path]}
+        impact={impact}
+        modes={removeRequest.kind === 'roots' ? ['library', 'disable', 'all'] : ['library', 'all']}
+        onClose={() => { setRemoveRequest(null); setImpact(null) }}
+        onConfirm={confirmRemove}
+      />}
     </section>
   )
 }
 
-function RemoveRootDialog(props: { root: SourceRoot; impact: SourceRootImpact | null; onClose: () => void; onConfirm: (mode: SourceRemovalMode) => Promise<void> }) {
-  const [mode, setMode] = useState<SourceRemovalMode>('library')
-  const [busy, setBusy] = useState(false)
-  const options: Array<{ value: SourceRemovalMode; title: string; text: string }> = [
-    { value: 'library', title: '从图库移除，相册保留引用', text: '照片不再出现在图库；已加入相册的照片会标记来源已移除。' },
-    { value: 'disable', title: '仅停止扫描', text: '照片继续保留在图库，来源目录保留在设置页，可随时重新启用。' },
-    { value: 'all', title: '从图库、相册和作品一起移除', text: '删除图库记录、相册引用和对应图片图层，保留文字与页面背景。' }
-  ]
-  const submit = async () => { setBusy(true); try { await props.onConfirm(mode) } finally { setBusy(false) } }
-  return (
-    <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) props.onClose() }}>
-      <div className="modal">
-        <header><h2>移除来源目录</h2><button disabled={busy} onClick={props.onClose}>×</button></header>
-        <div className="modal-body">
-          <p className="source-path">{props.root.path}</p>
-          <div className="removal-impact">{props.impact ? `当前目录关联 ${props.impact.assetCount.toLocaleString()} 张照片、${props.impact.locationCount.toLocaleString()} 个文件位置` : '正在统计影响范围…'}</div>
-          <div className="removal-options">{options.map((option) => <label className={mode === option.value ? 'active' : ''} key={option.value}><input type="radio" name="source-removal" value={option.value} checked={mode === option.value} onChange={() => setMode(option.value)} /><span><strong>{option.title}</strong><small>{option.text}</small></span></label>)}</div>
-          <p className="danger-note">这里只修改光影册的数据，不会删除、移动或重命名磁盘原图。</p>
-          <div className="dialog-actions"><button className="button secondary" disabled={busy} onClick={props.onClose}>取消</button><button className={`button ${mode === 'all' ? 'danger-solid' : 'primary'}`} disabled={busy || !props.impact} onClick={() => void submit()}>{busy ? '处理中…' : '确认'}</button></div>
-        </div>
-      </div>
-    </div>
-  )
-}
 export function Modal(props: { title: string; children: React.ReactNode; onClose: () => void; wide?: boolean; className?: string }) {
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose() }}><div className={`modal ${props.wide ? 'wide' : ''} ${props.className ?? ''}`}><header><h2>{props.title}</h2><button aria-label="关闭" onClick={props.onClose}>×</button></header><div className="modal-body">{props.children}</div></div></div>
 }
@@ -1058,9 +1342,6 @@ function nextWorkName(albumName: string, works: Work[]): string {
   return `${base} ${index}`
 }
 
-function sourceName(path: string): string {
-  return path.split(/[\\/]/).filter(Boolean).pop() || path
-}
 function fileName(path: string | null): string {
   if (!path) return '文件缺失'
   return path.split(/[\\/]/).pop() || path
