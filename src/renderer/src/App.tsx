@@ -574,7 +574,8 @@ function LibraryPage(props: {
                   onOpen={openLightbox}
                   onContextMenu={(event, photo) => setContextMenu({ x: event.clientX, y: event.clientY, asset: photo })}
                   onHover={(photo) => setHoveredFolder(treeOpen ? photo?.primaryDirectoryPath ?? null : null)}
-                  remeasureKey={`${treeOpen}|${inspectorOpen}|${treeWidth}|${inspectorWidth}|${props.settings.thumbnailSize}|${props.settings.uiScale}`}
+                  // 缩略图尺寸不影响容器宽度，不用重新测量，避免每次缩放多跑一轮渲染。
+                  remeasureKey={`${treeOpen}|${inspectorOpen}|${treeWidth}|${inspectorWidth}|${props.settings.uiScale}`}
                   onSizeChange={(value) => props.onSettingsChange({ thumbnailSize: value }, 'debounce')}
                 />}
           {photos.length > 0 && <div className="load-more" ref={sentinelRef}>{hasMore ? <button className="button secondary" disabled={loadingMore} onClick={() => setPage((current) => current + 1)}>{loadingMore ? '正在加载…' : '加载更多'}</button> : <span>已显示全部 {total.toLocaleString()} 张</span>}</div>}
@@ -900,7 +901,7 @@ function AlbumDetail(props: {
               onActivate={activate}
               onOpen={openLightbox}
               onContextMenu={(event, asset) => setContextMenu({ x: event.clientX, y: event.clientY, asset })}
-              remeasureKey={`${inspectorOpen}|${inspectorWidth}|${props.settings.thumbnailSize}|${props.settings.uiScale}`}
+              remeasureKey={`${inspectorOpen}|${inspectorWidth}|${props.settings.uiScale}`}
               onSizeChange={(value) => props.onSettingsChange({ thumbnailSize: value }, 'debounce')}
             />}
           <section className="section-block">

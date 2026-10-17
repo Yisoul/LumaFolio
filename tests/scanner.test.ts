@@ -77,6 +77,24 @@ describe('LibraryScanner', () => {
     expect(third.discovered).toBe(1)
   })
 
+  it('reports one continuous progress across all roots', async () => {
+    for (const name of ['one', 'two']) {
+      await mkdir(join(rootDir, name))
+      for (const file of ['a', 'b']) {
+        await sharp({ create: { width: 80, height: 60, channels: 3, background: '#556677' } }).jpeg().toFile(join(rootDir, name, `${file}.jpg`))
+      }
+    }
+    const roots = [db.createSourceRoot(join(rootDir, 'one')), db.createSourceRoot(join(rootDir, 'two'))]
+    const events: Array<{ phase: string; discovered: number; processed: number }> = []
+
+    await scanner.scanAll(roots, (progress) => events.push({ phase: progress.phase, discovered: progress.discovered, processed: progress.processed }))
+
+    const processed = events.map((event) => event.processed)
+    expect(processed.every((value, index) => index === 0 || value >= processed[index - 1])).toBe(true)
+    expect(events.filter((event) => event.phase === 'complete')).toHaveLength(1)
+    expect(events[events.length - 1]).toMatchObject({ phase: 'complete', discovered: 4, processed: 4 })
+  })
+
   it('keeps album references when a unique original is overwritten with content that already exists', async () => {
     const firstPath = join(rootDir, 'first.jpg')
     const secondPath = join(rootDir, 'second.jpg')

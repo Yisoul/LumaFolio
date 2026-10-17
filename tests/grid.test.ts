@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeJustifiedRows, resolveContainerWidth, viewportSignature } from '../src/renderer/src/grid'
+import { computeJustifiedRows, layoutTilePositions, resolveContainerWidth, viewportSignature } from '../src/renderer/src/grid'
 
 const landscape = (id: string) => ({ id, width: 3000, height: 2000 })
 const portrait = (id: string) => ({ id, width: 2000, height: 3000 })
@@ -82,5 +82,21 @@ describe('viewportSignature', () => {
 
   it('falls back to ratio 1 for broken values', () => {
     expect(viewportSignature(800, 600, Number.NaN)).toBe('800x600@1')
+  })
+})
+
+describe('layoutTilePositions', () => {
+  it('flattens rows into absolute coordinates and reserves the caption height', () => {
+    const layout = layoutTilePositions([
+      { height: 200, items: [{ id: 'a', width: 300 }, { id: 'b', width: 300 }] },
+      { height: 150, items: [{ id: 'c', width: 450 }] }
+    ], 6, 24)
+
+    expect(layout.tiles).toEqual([
+      { id: 'a', left: 0, top: 0, width: 300, height: 200 },
+      { id: 'b', left: 306, top: 0, width: 300, height: 200 },
+      { id: 'c', left: 0, top: 230, width: 450, height: 150 }
+    ])
+    expect(layout.height).toBe(404)
   })
 })

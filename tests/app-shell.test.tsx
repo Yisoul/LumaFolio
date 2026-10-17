@@ -389,11 +389,14 @@ describe('App shell', () => {
     const { container } = render(<App />)
 
     await waitFor(() => expect(container.querySelectorAll('.tile')).toHaveLength(2))
-    const row = container.querySelector('.justified-row') as HTMLElement
+    const grid = container.querySelector('.justified-grid') as HTMLElement
+    const tiles = Array.from(container.querySelectorAll('.tile')) as HTMLElement[]
     const image = container.querySelector('.tile-image') as HTMLElement
-    // 行高由图片撑开，说明文字在下面占据自己的空间。
-    expect(row.style.height).toBe('')
+    // 图片按行高排，说明文字绝对定位在图片下方，行与行之间预留了说明文字的高度。
+    expect(Number.parseFloat(grid.style.height)).toBeGreaterThan(0)
     expect(image.style.height).not.toBe('')
+    expect(tiles.every((tile) => tile.style.top !== '' && tile.style.left !== '')).toBe(true)
+    expect(tiles[1].style.left).not.toBe(tiles[0].style.left)
   })
 
   it('selects a continuous range with shift click', async () => {

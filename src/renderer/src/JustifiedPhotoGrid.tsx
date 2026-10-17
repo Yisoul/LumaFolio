@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MediaAssetSummary } from '../../shared/types'
-import { computeJustifiedRows, resolveContainerWidth, viewportSignature } from './grid'
+import { computeJustifiedRows, layoutTilePositions, resolveContainerWidth, viewportSignature } from './grid'
 import { fileName, ratingStars, thumbnailUrl } from './helpers'
 import { IconCheck, IconStar } from './icons'
+
+/** 和 .tile-caption 的固定高度保持一致，用来算行间距。 */
+const CAPTION_HEIGHT = 24
 
 export type PhotoSelectMode = 'replace' | 'toggle' | 'range'
 
@@ -90,6 +93,7 @@ export default function JustifiedPhotoGrid(props: JustifiedPhotoGridProps) {
     props.photos.map((photo) => ({ id: photo.id, width: photo.width, height: photo.height })),
     { containerWidth: containerWidth || 960, targetHeight: props.targetHeight, gap: 6 }
   ), [containerWidth, props.photos, props.targetHeight])
+  const positions = useMemo(() => layoutTilePositions(layout.rows, 6, CAPTION_HEIGHT), [layout])
 
   useEffect(() => {
     const node = gridRef.current
@@ -106,6 +110,7 @@ export default function JustifiedPhotoGrid(props: JustifiedPhotoGridProps) {
       const { scale } = zoomRef.current
       zoomRef.current.scale = 1
       node.style.transform = ''
+      node.style.willChange = ''
       if (Math.abs(scale - 1) < 0.001) return
       const { min, max } = boundsRef.current
       sizeChangeRef.current?.(Math.max(min, Math.min(max, Math.round(targetHeightRef.current * scale))))
@@ -116,6 +121,7 @@ export default function JustifiedPhotoGrid(props: JustifiedPhotoGridProps) {
       event.preventDefault()
       const factor = event.deltaY > 0 ? 0.92 : 1.08
       zoomRef.current.scale = Math.max(0.4, Math.min(2.5, zoomRef.current.scale * factor))
+      node.style.willChange = 'transform'
       if (!zoomRef.current.frame) zoomRef.current.frame = window.requestAnimationFrame(paint)
       if (zoomRef.current.idle) window.clearTimeout(zoomRef.current.idle)
       zoomRef.current.idle = window.setTimeout(commit, 140)
@@ -132,39 +138,40 @@ export default function JustifiedPhotoGrid(props: JustifiedPhotoGridProps) {
       zoomRef.current.idle = 0
       zoomRef.current.scale = 1
       node.style.transform = ''
+      node.style.willChange = ''
     }
   }, [])
 
   return (
-    <div className="justified-grid" ref={(node) => { containerRef.current = node; gridRef.current = node }}>
-      {layout.rows.map((row, rowIndex) => (
-        <div className="justified-row" key={rowIndex}>
-          {row.items.map((item) => {
-            const asset = assetById.get(item.id)
-            if (!asset) return null
-            return (
-              <PhotoTile
-                key={asset.id}
-                asset={asset}
-                width={item.width}
-                height={row.height}
-                selected={props.selectedIds.has(asset.id)}
-                active={props.activeId === asset.id}
-                onActivate={props.onActivate}
-                onOpen={props.onOpen}
-                onContextMenu={props.onContextMenu}
-                onHover={props.onHover}
-              />
-            )
-          })}
-        </div>
-      ))}
+    <div className="justified-grid" ref={(node) => { containerRef.current = node; gridRef.current = node }} style={{ height: positions.height }}>
+      {positions.tiles.map((tile) => {
+        const asset = assetById.get(tile.id)
+        if (!asset) return null
+        return (
+          <PhotoTile
+            key={asset.id}
+            asset={asset}
+            left={tile.left}
+            top={tile.top}
+            width={tile.width}
+            height={tile.height}
+            selected={props.selectedIds.has(asset.id)}
+            active={props.activeId === asset.id}
+            onActivate={props.onActivate}
+            onOpen={props.onOpen}
+            onContextMenu={props.onContextMenu}
+            onHover={props.onHover}
+          />
+        )
+      })}
     </div>
   )
 }
 
 function PhotoTile(props: {
   asset: MediaAssetSummary
+  left: number
+  top: number
   width: number
   height: number
   selected: boolean
@@ -181,7 +188,7 @@ function PhotoTile(props: {
   return (
     <figure
       className={`tile ${props.selected ? 'selected' : ''} ${props.active ? 'active' : ''}`}
-      style={{ width: `${props.width}px` }}
+      style={{ left: `${props.left}px`, top: `${props.top}px`, width: `${props.width}px`, height: `${props.height}px` }}
       onMouseEnter={() => props.onHover?.(props.asset)}
       onMouseLeave={() => props.onHover?.(null)}
     >

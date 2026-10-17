@@ -7,6 +7,15 @@ import type { MediaAssetSummary } from '../src/shared/types'
 
 afterEach(cleanup)
 
+/** 第一行（top 相同）的 tiles 总宽度，用来验证行宽铺满容器。 */
+function firstRowWidth(container: HTMLElement): number {
+  const tiles = Array.from(container.querySelectorAll('.tile')) as HTMLElement[]
+  if (tiles.length === 0) return 0
+  const top = tiles[0].style.top
+  const row = tiles.filter((tile) => tile.style.top === top)
+  return row.reduce((sum, tile) => sum + Number.parseFloat(tile.style.width), 0) + 6 * (row.length - 1)
+}
+
 function asset(id: string): MediaAssetSummary {
   return {
     id, contentHash: `hash-${id}`, addedAt: 0, width: 1200, height: 800, format: 'jpeg',
@@ -75,10 +84,7 @@ describe('JustifiedPhotoGrid', () => {
 
     fireEvent(window, new Event('resize'))
 
-    const row = container.querySelector('.justified-row') as HTMLElement
-    const tiles = Array.from(row.querySelectorAll('.tile')) as HTMLElement[]
-    const total = tiles.reduce((sum, tile) => sum + Number.parseFloat(tile.style.width), 0) + 6 * (tiles.length - 1)
-    expect(Math.abs(total - 872)).toBeLessThanOrEqual(6)
+    expect(Math.abs(firstRowWidth(container) - 872)).toBeLessThanOrEqual(6)
   })
 
   it('re-measures when the viewport changes without any resize event', () => {
@@ -99,18 +105,13 @@ describe('JustifiedPhotoGrid', () => {
       Object.defineProperty(host, 'clientWidth', { configurable: true, value: 900 })
       Object.defineProperty(grid, 'clientWidth', { configurable: true, value: 2000 })
       act(() => { vi.advanceTimersByTime(300) })
-      const rowSum = (): number => {
-        const row = container.querySelector('.justified-row') as HTMLElement
-        const tiles = Array.from(row.querySelectorAll('.tile')) as HTMLElement[]
-        return tiles.reduce((sum, tile) => sum + Number.parseFloat(tile.style.width), 0) + 6 * (tiles.length - 1)
-      }
-      expect(Math.abs(rowSum() - 872)).toBeLessThanOrEqual(6)
+      expect(Math.abs(firstRowWidth(container) - 872)).toBeLessThanOrEqual(6)
 
       // 模拟 Electron 改界面缩放：视口和容器都变窄，但没有任何事件派发。
       Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1200 })
       Object.defineProperty(host, 'clientWidth', { configurable: true, value: 500 })
       act(() => { vi.advanceTimersByTime(300) })
-      expect(Math.abs(rowSum() - 472)).toBeLessThanOrEqual(6)
+      expect(Math.abs(firstRowWidth(container) - 472)).toBeLessThanOrEqual(6)
     } finally {
       vi.useRealTimers()
     }

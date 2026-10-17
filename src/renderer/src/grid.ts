@@ -19,6 +19,19 @@ export interface JustifiedLayout {
   height: number
 }
 
+export interface PositionedTile {
+  id: string
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+export interface JustifiedPositions {
+  tiles: PositionedTile[]
+  height: number
+}
+
 export interface JustifiedOptions {
   containerWidth: number
   targetHeight: number
@@ -50,6 +63,25 @@ export function resolveContainerWidth(hostClientWidth: number, paddingLeft: numb
 export function viewportSignature(width: number, height: number, devicePixelRatio: number): string {
   const ratio = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1
   return `${Math.round(width)}x${Math.round(height)}@${ratio}`
+}
+
+/**
+ * 把对齐行拍平成绝对定位坐标。
+ * 行结构会让图片在换行时被 React 卸载重建，重新解码整片缩略图；
+ * 拍平后每个 tile 的 key 稳定，缩放只改 left/top/width/height，不会重建图片节点。
+ */
+export function layoutTilePositions(rows: JustifiedRow[], gap: number, captionHeight: number): JustifiedPositions {
+  const tiles: PositionedTile[] = []
+  let top = 0
+  for (const row of rows) {
+    let left = 0
+    for (const item of row.items) {
+      tiles.push({ id: item.id, left, top, width: item.width, height: row.height })
+      left += item.width + gap
+    }
+    top += row.height + captionHeight + gap
+  }
+  return { tiles, height: Math.max(0, top - gap) }
 }
 
 /**

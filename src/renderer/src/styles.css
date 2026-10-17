@@ -631,9 +631,9 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .chip-date label { display: grid; gap: 3px; color: var(--muted); font-size: 10px; }
 
 /* ---------- 对齐行图片网格 ---------- */
-.justified-grid { display: grid; gap: 6px; min-width: 0; }
-.justified-row { display: flex; align-items: flex-start; gap: 6px; }
-.tile { position: relative; margin: 0; min-width: 0; }
+/* 对齐行拍平成绝对定位：缩放时只改坐标，tile 的 DOM 和图片节点不会重建。 */
+.justified-grid { position: relative; min-width: 0; }
+.tile { position: absolute; margin: 0; min-width: 0; }
 .tile-image { position: relative; display: block; width: 100%; padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 2px; background: var(--image-bg); }
 .tile.selected .tile-image { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .tile-image img { display: block; width: 100%; height: 100%; object-fit: cover; background: var(--image-bg); }
@@ -643,7 +643,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .tile.selected .tile-check { border-color: var(--accent); background: var(--accent); }
 .tile-favorite { position: absolute; top: 6px; right: 6px; color: var(--star); filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
 .tile-badge { position: absolute; right: 6px; bottom: 6px; padding: 1px 5px; border-radius: 3px; color: #fff; background: rgba(0,0,0,.55); font-size: 10px; }
-.tile-caption { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 2px 6px; padding: 5px 2px 4px; }
+.tile-caption { position: absolute; top: 100%; left: 0; right: 0; display: flex; align-items: baseline; justify-content: center; gap: 6px; height: 24px; padding: 4px 2px 0; overflow: hidden; }
 .tile-name { max-width: 100%; overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .tile-stars { color: var(--star); font-size: 10px; letter-spacing: -1px; }
 

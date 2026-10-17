@@ -131,9 +131,48 @@ export class LibraryScanner {
     roots: SourceRoot[],
     onProgress?: (progress: ScanProgress) => void
   ): Promise<ScanResult[]> {
+    const enabled = roots.filter((root) => root.enabled)
     const results: ScanResult[] = []
-    for (const root of roots) {
-      if (root.enabled) results.push(await this.scanRoot(root, onProgress))
+    let discovered = 0
+    let processed = 0
+    let indexed = 0
+    let errors = 0
+    let lastEmit = 0
+    const total = enabled.length
+
+    /**
+     * 所有目录汇总成一条连续进度：目录内部累加，目录之间不回到 0，
+     * 顶部扫描条不会每个目录都闪一下、跳一次。事件也限流到 10 次/秒。
+     */
+    const emit = (phase: ScanProgress['phase'], root: SourceRoot, current: { discovered: number; processed: number }, force = false): void => {
+      if (!onProgress) return
+      const now = Date.now()
+      if (!force && now - lastEmit < 100) return
+      lastEmit = now
+      onProgress({
+        rootId: root.id,
+        phase,
+        discovered: discovered + current.discovered,
+        processed: processed + current.processed,
+        indexed,
+        errors
+      })
+    }
+
+    for (const root of enabled) {
+      const result = await this.scanRoot(root, (progress) => {
+        // 单个目录结束时先保持「读取中」，等整体结束再收掉扫描条。
+        emit(progress.phase === 'complete' ? 'reading' : progress.phase, root, progress)
+      })
+      results.push(result)
+      discovered += result.discovered
+      processed += result.discovered
+      indexed += result.indexed
+      errors += result.errors.length
+      emit(results.length === total ? 'complete' : 'reading', root, { discovered: 0, processed: 0 }, true)
+    }
+    if (total === 0 && onProgress) {
+      onProgress({ rootId: '', phase: 'complete', discovered: 0, processed: 0, indexed: 0, errors: 0 })
     }
     return results
   }

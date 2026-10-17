@@ -53,9 +53,11 @@ export function registerIpcHandlers(context: IpcContext): () => void {
   handle('app:get-stats', () => context.db.getStats())
   handle('app:get-settings', () => context.settings.get())
   handle('app:save-settings', async (_event, value: AppSettings) => {
+    const before = await context.settings.get()
     const saved = await context.settings.save(value)
-    context.setUiScale(saved.uiScale)
-    await configureWatchers(context)
+    if (Math.abs(before.uiScale - saved.uiScale) > 0.001) context.setUiScale(saved.uiScale)
+    // 缩放、主题、缩略图尺寸这些改动跟监听无关，重建所有目录监听非常卡，只有开关变了才重配。
+    if (before.autoWatch !== saved.autoWatch) await configureWatchers(context)
     return saved
   })
   handle('app:choose-folders', async () => {
