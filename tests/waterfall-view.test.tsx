@@ -114,6 +114,22 @@ describe('WaterfallView', () => {
     expect(container.querySelector('.waterfall-file')?.textContent).toBe('shot-1.jpg')
   })
 
+  it('retries a failed thumbnail before marking the photo unavailable', async () => {
+    const assets = [asset(1)]
+    createApiMock(assets)
+    const { container } = render(<WaterfallView source={{ kind: 'library', title: '图库', filters: { sort: 'captured_desc' } }} onClose={() => undefined} onToast={() => undefined} />)
+    await waitFor(() => expect(container.querySelector('.waterfall-item img')).toBeTruthy())
+
+    fireEvent.error(container.querySelector('.waterfall-item img')!)
+    // 第一次失败先不判死刑。
+    expect(container.querySelector('.waterfall-placeholder')).toBeNull()
+
+    await waitFor(() => {
+      const retried = container.querySelector('.waterfall-item img') as HTMLImageElement | null
+      expect(retried?.src ?? '').toContain('retry=1')
+    }, { timeout: 2500 })
+  })
+
   it('opens the lightbox on double click and closes it with Escape', async () => {
     const onClose = vi.fn()
     createApiMock([asset(1), asset(2)])

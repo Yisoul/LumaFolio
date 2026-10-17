@@ -331,9 +331,24 @@ const WaterfallItem = memo(function WaterfallItem(props: {
   onToggleMark: () => void
 }) {
   const [failed, setFailed] = useState(false)
-  useEffect(() => setFailed(false), [props.asset.id])
+  const [attempt, setAttempt] = useState(0)
+  const retryRef = useRef<number | null>(null)
+  useEffect(() => {
+    setFailed(false)
+    setAttempt(0)
+    return () => { if (retryRef.current) window.clearTimeout(retryRef.current) }
+  }, [props.asset.id])
   const ratio = props.asset.width > 0 && props.asset.height > 0 ? props.asset.width / props.asset.height : 1
   const unavailable = props.asset.missing || failed
+  // 扫描/生成缩略图的瞬间偶发 404，重试两次再判定不可用，避免图片闪一下消失。
+  const retry = () => {
+    if (attempt >= 2) {
+      setFailed(true)
+      return
+    }
+    retryRef.current = window.setTimeout(() => setAttempt((value) => value + 1), 350 * (attempt + 1))
+  }
+  const source = `${thumbnailUrl(props.asset.id, 640)}${attempt > 0 ? `&retry=${attempt}` : ''}`
   return (
     <button
       className={`waterfall-item ${props.selected ? 'selected' : ''} ${props.marked ? 'marked' : ''}`}
@@ -343,7 +358,7 @@ const WaterfallItem = memo(function WaterfallItem(props: {
     >
       {unavailable
         ? <div className="waterfall-placeholder" style={{ aspectRatio: ratio }}><span>▧</span><small>来源不可用</small></div>
-        : <img src={thumbnailUrl(props.asset.id, 640)} alt={fileName(props.asset.primaryPath)} loading="lazy" decoding="async" style={{ aspectRatio: ratio }} onError={() => setFailed(true)} />}
+        : <img src={source} alt={fileName(props.asset.primaryPath)} loading="lazy" decoding="async" style={{ aspectRatio: ratio }} onLoad={() => setFailed(false)} onError={retry} />}
       {props.asset.rating > 0 && <span className="waterfall-stars" title={`相机内评星 ${props.asset.rating} 星`}>{ratingStars(props.asset.rating)}</span>}
       {props.asset.favorite && <span className="waterfall-favorite" title="已收藏">★</span>}
       {props.marked && <span className="waterfall-mark-badge" title="已加入临时相册">{props.pending ? '…' : '✓'}</span>}

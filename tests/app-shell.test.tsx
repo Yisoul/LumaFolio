@@ -483,4 +483,27 @@ describe('App shell', () => {
 
     await waitFor(() => expect(api.albums.exportPhotos).toHaveBeenCalledWith({ assetIds: ['asset-1'], directory: 'C:\\out', mode: 'original' }))
   })
+
+  it('range-selects photos inside the album picker', async () => {
+    const api = stubApi('dark', [libraryAsset(1), libraryAsset(2), libraryAsset(3)], [{ id: 'root-1', path: 'C:\\photos', enabled: true, createdAt: 0 }])
+    api.albums.list.mockResolvedValue([{ id: 'album-1', name: '测试相册', coverAssetId: null, createdAt: 0, updatedAt: 0 }])
+    api.albums.listAssets.mockResolvedValue([])
+    const { container } = render(<App />)
+    await waitFor(() => expect(container.querySelector('.browse-toolbar')).not.toBeNull())
+
+    fireEvent.keyDown(window, { key: '3', ctrlKey: true })
+    fireEvent.click(await screen.findByText('测试相册'))
+    await waitFor(() => expect(screen.getByTitle('选择照片')).toBeTruthy())
+    fireEvent.click(screen.getByTitle('选择照片'))
+    const picker = await waitFor(() => {
+      const node = container.querySelector('.picker-modal')
+      if (!node || node.querySelectorAll('.tile').length < 3) throw new Error('picker not ready')
+      return node
+    })
+
+    fireEvent.click(picker.querySelectorAll('.tile-image')[0])
+    fireEvent.click(picker.querySelectorAll('.tile-image')[2], { shiftKey: true })
+
+    await waitFor(() => expect(screen.getByText('已选 3 张')).toBeTruthy())
+  })
 })

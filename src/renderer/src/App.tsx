@@ -970,6 +970,7 @@ function AssetPicker(props: { title: string; thumbnailSize: number; onClose: () 
   const [assets, setAssets] = useState<MediaAssetSummary[]>([])
   const [total, setTotal] = useState(0)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [anchorId, setAnchorId] = useState<string | null>(null)
   const [detail, setDetail] = useState<MediaAssetSummary | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const requestIdRef = useRef(0)
@@ -1038,13 +1039,26 @@ function AssetPicker(props: { title: string; thumbnailSize: number; onClose: () 
               targetHeight={props.thumbnailSize}
               selectedIds={selected}
               activeId={null}
-              onActivate={(asset, mode) => setSelected((current) => {
-                if (mode === 'replace') return new Set([asset.id])
-                const next = new Set(current)
-                if (next.has(asset.id)) next.delete(asset.id)
-                else next.add(asset.id)
-                return next
-              })}
+              onActivate={(asset, mode) => {
+                setSelected((current) => {
+                  if (mode === 'toggle') {
+                    const next = new Set(current)
+                    if (next.has(asset.id)) next.delete(asset.id)
+                    else next.add(asset.id)
+                    return next
+                  }
+                  if (mode === 'range' && anchorId) {
+                    const from = assets.findIndex((item) => item.id === anchorId)
+                    const to = assets.findIndex((item) => item.id === asset.id)
+                    if (from >= 0 && to >= 0) {
+                      const [start, end] = from <= to ? [from, to] : [to, from]
+                      return new Set(assets.slice(start, end + 1).map((item) => item.id))
+                    }
+                  }
+                  return new Set([asset.id])
+                })
+                if (mode !== 'range') setAnchorId(asset.id)
+              }}
               onOpen={(asset) => setDetail(asset)}
             />
             {assets.length > 0 && <div className="load-more" ref={sentinelRef}>{hasMore ? <button className="button secondary" disabled={loadingMore} onClick={() => setPage((current) => current + 1)}>{loadingMore ? '正在加载…' : '加载更多'}</button> : <span>已显示全部 {total.toLocaleString()} 张</span>}</div>}

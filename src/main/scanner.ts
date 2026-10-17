@@ -104,7 +104,6 @@ export class LibraryScanner {
       return { discovered, indexed, errors }
     }
 
-    this.db.markRootLocationsMissing(root.id)
     const files = await this.collectSupportedFiles(root.path, errors)
     discovered = files.length
     onProgress?.({ rootId: root.id, phase: 'scanning', discovered, processed, indexed, errors: errors.length })
@@ -123,6 +122,7 @@ export class LibraryScanner {
     })
 
     this.db.markLocationsAvailable(unchangedLocations)
+    this.db.markMissingLocations(root.id, files)
     onProgress?.({ rootId: root.id, phase: 'complete', discovered, processed, indexed, errors: errors.length })
     return { discovered, indexed, errors }
   }

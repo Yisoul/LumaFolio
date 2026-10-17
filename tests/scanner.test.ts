@@ -95,6 +95,30 @@ describe('LibraryScanner', () => {
     expect(events[events.length - 1]).toMatchObject({ phase: 'complete', discovered: 4, processed: 4 })
   })
 
+  it('keeps photos available during a scan and only marks deleted ones afterwards', async () => {
+    const file = join(rootDir, 'keep.jpg')
+    const removed = join(rootDir, 'gone.jpg')
+    await sharp({ create: { width: 80, height: 60, channels: 3, background: '#667788' } }).jpeg().toFile(file)
+    await sharp({ create: { width: 90, height: 70, channels: 3, background: '#887766' } }).jpeg().toFile(removed)
+    const source = db.createSourceRoot(rootDir)
+    await scanner.scanRoot(source)
+    const keepAsset = db.searchAssets({ limit: 10, offset: 0 }).items.find((asset) => asset.primaryPath === file)!
+    const goneAsset = db.searchAssets({ limit: 10, offset: 0 }).items.find((asset) => asset.primaryPath === removed)!
+
+    // 扫描过程中不能把已有照片临时标成 missing，否则缩略图会 404、正在看的图会消失。
+    let availableThroughout = true
+    await scanner.scanRoot(source, () => {
+      if (!db.getPreferredLocation(keepAsset.id)) availableThroughout = false
+    })
+    expect(availableThroughout).toBe(true)
+    expect(db.getAsset(keepAsset.id)?.missing).toBe(false)
+
+    await rm(removed)
+    await scanner.scanRoot(source)
+    expect(db.getAsset(goneAsset.id)?.missing).toBe(true)
+    expect(db.getAsset(keepAsset.id)?.missing).toBe(false)
+  })
+
   it('keeps album references when a unique original is overwritten with content that already exists', async () => {
     const firstPath = join(rootDir, 'first.jpg')
     const secondPath = join(rootDir, 'second.jpg')

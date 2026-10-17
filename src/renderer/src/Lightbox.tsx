@@ -18,6 +18,8 @@ export default function Lightbox(props: LightboxProps) {
   const asset = props.assets[props.index] ?? null
   const marked = props.marked ?? new Set<string>()
   const [loadedId, setLoadedId] = useState<string | null>(null)
+  const [previewAttempt, setPreviewAttempt] = useState(0)
+  useEffect(() => { setPreviewAttempt(0) }, [asset?.id])
 
   // 预加载相邻两张，翻页时不用等解码。
   useEffect(() => {
@@ -61,10 +63,11 @@ export default function Lightbox(props: LightboxProps) {
           <img className={`lightbox-thumb ${loadedId === asset.id ? 'hidden' : ''}`} src={thumbnailUrl(asset.id, 960)} alt="" aria-hidden="true" />
           <img
             className={`lightbox-image ${loadedId === asset.id ? 'loaded' : ''}`}
-            src={previewUrl(asset.id, 1600)}
+            src={`${previewUrl(asset.id, 1600)}${previewAttempt > 0 ? `&retry=${previewAttempt}` : ''}`}
             alt={fileName(asset.primaryPath)}
             decoding="async"
             onLoad={() => setLoadedId(asset.id)}
+            onError={() => { if (previewAttempt < 2) window.setTimeout(() => setPreviewAttempt((value) => value + 1), 400) }}
           />
         </>}
       <button className="lightbox-nav next" onClick={() => step(1)} aria-label="下一张">›</button>

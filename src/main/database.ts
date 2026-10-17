@@ -729,6 +729,36 @@ export class AppDatabase {
     `).run()
   }
 
+  /**
+   * 扫描结束后只把这次没找到的文件标记为 missing。
+   * 扫描开始时不能先全标 missing，否则扫描期间缩略图接口会拿不到可用位置，正在看的图会变成 404。
+   */
+  markMissingLocations(rootId: string, keepPaths: Iterable<string>): void {
+    const keep = new Set(Array.from(keepPaths, (path) => path.toLowerCase()))
+    const rows = this.db.prepare('SELECT id, asset_id, absolute_path FROM media_locations WHERE root_id = ?').all(rootId) as Row[]
+    const updateLocation = this.db.prepare("UPDATE media_locations SET status = 'missing', updated_at = ? WHERE id = ?")
+    const updateAsset = this.db.prepare(`
+      UPDATE media_assets SET missing = CASE WHEN NOT EXISTS (
+        SELECT 1 FROM media_locations WHERE asset_id = media_assets.id AND status = 'available'
+      ) THEN 1 ELSE 0 END, updated_at = ? WHERE id = ?
+    `)
+    const affected = new Set<string>()
+    const now = Date.now()
+    this.db.exec('BEGIN')
+    try {
+      for (const row of rows) {
+        if (keep.has(asString(row.absolute_path).toLowerCase())) continue
+        updateLocation.run(now, asString(row.id))
+        affected.add(asString(row.asset_id))
+      }
+      for (const assetId of affected) updateAsset.run(now, assetId)
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+  }
+
   searchAssets(filters: SearchFilters): { items: MediaAssetSummary[]; total: number } {
     const clauses: string[] = ["EXISTS (SELECT 1 FROM media_locations availability WHERE availability.asset_id = a.id AND availability.status = 'available')"]
     const params: Array<string | number> = []
